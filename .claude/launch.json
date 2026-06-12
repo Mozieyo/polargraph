@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "studio",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["tools/studio_server.py"],
+      "port": 8770
+    }
+  ]
+}

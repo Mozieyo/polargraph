@@ -1,0 +1,5 @@
+# macOS launcher must stay LF (CRLF breaks the shebang: "bad interpreter")
+studio.command text eol=lf
+*.sh text eol=lf
+# Windows launcher stays CRLF
+*.bat text eol=crlf

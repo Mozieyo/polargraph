@@ -1,0 +1,24 @@
+[project]
+name = "polargraph"
+version = "0.1.0"
+description = "PC-side studio, toolpath, polar kinematics, and grbl streaming for the glass-frame V-plotter"
+requires-python = ">=3.11"
+dependencies = [
+    "pyserial>=3.5",   # grbl streaming (sender.py); everything else is stdlib
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+polargraph = "polargraph.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+polargraph = ["studio/*", "data/*"]

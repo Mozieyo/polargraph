@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Polargraph · Studio</title>
+<style>
+  :root{
+    --bg:#0e0f12; --panel:#15171c; --panel2:#1b1e24; --line:#272b33;
+    --ink:#c9ccd2; --dim:#7e8590; --accent:#d7a64b; --accent2:#6cb6c9;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    display:grid;grid-template-columns:320px 1fr;overflow:hidden}
+  /* ---- sidebar ---- */
+  aside{background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;height:100vh;min-height:0}
+  .brand{padding:16px 18px 12px;border-bottom:1px solid var(--line)}
+  .brand h1{margin:0;font-family:var(--mono);font-size:13px;letter-spacing:.22em;
+    font-weight:600;color:var(--ink)}
+  .brand h1 b{color:var(--accent);font-weight:600}
+  .brand p{margin:4px 0 0;font-size:11px;color:var(--dim);letter-spacing:.04em}
+  .scroll{overflow-y:auto;padding:14px 16px 18px;flex:1;min-height:0}
+  .scroll::-webkit-scrollbar{width:9px}
+  .scroll::-webkit-scrollbar-thumb{background:#2c313a;border-radius:9px}
+  section.grp{margin-bottom:16px}
+  .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--dim);
+    text-transform:uppercase;margin:0 0 8px}
+  /* generator tabs */
+  .gens{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .gens button{font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+    padding:9px 6px;background:var(--panel2);color:var(--dim);border:1px solid var(--line);
+    border-radius:7px;cursor:pointer;transition:.12s}
+  .gens button:hover{color:var(--ink);border-color:#39404a}
+  .gens button.on{background:#23262d;color:var(--accent);border-color:var(--accent)}
+  /* control rows */
+  .row{margin:11px 0}
+  .row .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
+  .row .name{font-size:12px;color:#aeb4be}
+  .row .val{font-family:var(--mono);font-size:11px;color:var(--accent)}
+  input[type=range]{-webkit-appearance:none;width:100%;height:3px;border-radius:3px;
+    background:#2b3038;outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;
+    border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid #1a1c21}
+  select,input[type=number]{width:100%;background:var(--panel2);color:var(--ink);
+    border:1px solid var(--line);border-radius:7px;padding:8px 9px;font-family:var(--mono);
+    font-size:12px}
+  .seedrow{display:flex;gap:6px}
+  .seedrow input{flex:1}
+  .ibtn{background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--ink);
+    width:38px;cursor:pointer;font-size:15px;transition:.12s}
+  .ibtn:hover{border-color:var(--accent);color:var(--accent)}
+  .swatches{display:flex;gap:6px;flex-wrap:wrap}
+  .sw{display:flex;align-items:center;gap:7px;padding:6px 9px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:20px;cursor:pointer;font-size:11px;color:var(--dim)}
+  .sw.on{border-color:var(--accent);color:var(--ink)}
+  .sw i{display:flex;gap:3px}
+  .sw i u{width:10px;height:10px;border-radius:50%;display:block}
+  /* actions */
+  .actions{padding:14px 16px;border-top:1px solid var(--line);background:var(--panel);
+    display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .actions button{font-family:var(--mono);font-size:11px;letter-spacing:.06em;padding:11px 8px;
+    border-radius:8px;cursor:pointer;border:1px solid var(--line);background:var(--panel2);
+    color:var(--ink);transition:.12s}
+  .actions button:hover{border-color:#39404a}
+  .actions .primary{grid-column:1/3;background:var(--accent);color:#1a1405;border-color:var(--accent);
+    font-weight:600}
+  .actions .primary:hover{filter:brightness(1.07)}
+  .actions .primary.stop{background:#b23b3b;border-color:#b23b3b;color:#fff}
+  .actions select{grid-column:1/3;font-size:11px;color:var(--dim)}
+  /* ---- stage ---- */
+  main{position:relative;height:100vh;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(900px 600px at 60% 30%,#15171c 0%,#0e0f12 70%)}
+  #stage{box-shadow:0 24px 70px rgba(0,0,0,.55);background:#fff}
+  .hud{position:absolute;left:16px;bottom:14px;font-family:var(--mono);font-size:11px;
+    color:var(--dim);letter-spacing:.05em;display:flex;gap:14px}
+  .hud b{color:#9aa1ab;font-weight:500}
+  .toast{position:absolute;top:16px;left:50%;transform:translateX(-50%) translateY(-14px);
+    background:#23262d;border:1px solid var(--accent);color:var(--ink);padding:9px 16px;
+    border-radius:8px;font-family:var(--mono);font-size:12px;opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand">
+    <h1>POLARGRAPH<b> · </b>STUDIO</h1>
+    <p>generative plotter art — lines for a pen, not pixels</p>
+  </div>
+  <div class="scroll">
+    <section class="grp">
+      <p class="lbl">Generator</p>
+      <div class="gens" id="gens"></div>
+    </section>
+    <section class="grp" id="paramwrap">
+      <p class="lbl">Parameters</p>
+      <div id="params"></div>
+    </section>
+    <section class="grp">
+      <p class="lbl">Seed</p>
+      <div class="seedrow">
+        <input type="number" id="seed" value="1337">
+        <button class="ibtn" id="dice" title="New random seed">⚄</button>
+      </div>
+    </section>
+    <section class="grp">
+      <p class="lbl">Pens / palette</p>
+      <div class="swatches" id="palettes"></div>
+    </section>
+    <section class="grp">
+      <p class="lbl">Mask / retouch</p>
+      <div class="gens" id="masktools">
+        <button data-t="0" class="on">OFF</button>
+        <button data-t="1">BRUSH</button>
+        <button data-t="2">LASSO</button>
+        <button id="maskshow" class="on">OVERLAY</button>
+      </div>
+      <div class="row">
+        <div class="top"><span class="name">Effect</span><span class="val" id="v_meffect">cut</span></div>
+        <input type="range" id="meffect" min="0" max="1" step="0.05" value="0">
+      </div>
+      <div class="row">
+        <div class="top"><span class="name">Brush size</span><span class="val" id="v_msize">16 mm</span></div>
+        <input type="range" id="msize" min="3" max="60" step="1" value="16">
+      </div>
+      <div class="row">
+        <div class="top"><span class="name">Softness</span><span class="val" id="v_msoft">0.60</span></div>
+        <input type="range" id="msoft" min="0" max="0.95" step="0.05" value="0.6">
+      </div>
+      <div class="gens">
+        <button id="mblur">SMEAR / BLUR</button>
+        <button id="mclear">CLEAR MASK</button>
+      </div>
+      <p style="font-size:10px;color:var(--dim);margin:8px 0 0;line-height:1.5">
+        brush: drag on the page &middot; lasso: click points, double-click to close &middot;
+        effect 0 = cut, mid = thin, 1 = restore</p>
+    </section>
+    <section class="grp">
+      <p class="lbl">Paper</p>
+      <div class="row"><select id="paper">
+        <option value="A5">A5  · 148 × 210 mm</option>
+        <option value="A4" selected>A4  · 210 × 297 mm</option>
+        <option value="A6">A6  · 105 × 148 mm</option>
+      </select></div>
+      <div class="row"><select id="orient">
+        <option value="P" selected>Portrait</option>
+        <option value="L">Landscape</option>
+      </select></div>
+      <div class="row">
+        <div class="top"><span class="name">Margin</span><span class="val" id="marginV">15 mm</span></div>
+        <input type="range" id="margin" min="0" max="40" step="1" value="15">
+      </div>
+    </section>
+  </div>
+  <div class="actions">
+    <button class="primary" id="plot">► PLOT</button>
+    <select id="anchor" style="grid-column:1/3">
+      <option value="placed">anchor: paper-placed (machine homed)</option>
+      <option value="here">anchor: start from current spot</option>
+    </select>
+    <select id="pass" style="grid-column:1/3">
+      <option value="-1">plot: all passes (single pen)</option>
+      <option value="0">plot: pass 1 only — swap pens between</option>
+      <option value="1">plot: pass 2 only</option>
+      <option value="2">plot: pass 3 only</option>
+    </select>
+    <button id="export">⤓ EXPORT SVG</button>
+    <button id="regen">REGENERATE</button>
+    <button id="copy" style="grid-column:1/3">COPY PARAMS</button>
+  </div>
+</aside>
+<main>
+  <canvas id="stage"></canvas>
+  <div class="hud" id="hud"></div>
+  <div class="toast" id="toast"></div>
+</main>
+
+<script>
+/* ============================== helpers ============================== */
+const TAU=Math.PI*2;
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+// seedable PRNG (mulberry32)
+function rngFrom(seed){let a=seed>>>0;return()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+// integer hash -> value noise -> fbm
+function hash2(ix,iy,s){let h=Math.imul(ix,374761393)+Math.imul(iy,668265263)+Math.imul(s,0x9E3779B1);
+  h=Math.imul(h^h>>>13,1274126177);return((h^h>>>16)>>>0)/4294967296;}
+const smooth=t=>t*t*(3-2*t);
+function vnoise(x,y,s){const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;
+  const a=hash2(ix,iy,s),b=hash2(ix+1,iy,s),c=hash2(ix,iy+1,s),d=hash2(ix+1,iy+1,s);
+  const u=smooth(fx),v=smooth(fy);return a*(1-u)*(1-v)+b*u*(1-v)+c*(1-u)*v+d*u*v;}
+function fbm(x,y,s,oct=4){let amp=.5,f=1,sum=0,nrm=0;for(let i=0;i<oct;i++){
+  sum+=amp*vnoise(x*f,y*f,s+i*131);nrm+=amp;amp*=.5;f*=2;}return sum/nrm;}
+// clip infinite line (p + t*d) to rect -> [[x,y],[x,y]] or null  (Liang-Barsky)
+function clipLine(px,py,dx,dy,r){let t0=-1e9,t1=1e9;
+  const p=[-dx,dx,-dy,dy], q=[px-r.x0, r.x1-px, py-r.y0, r.y1-py];
+  for(let i=0;i<4;i++){if(Math.abs(p[i])<1e-12){if(q[i]<0)return null;}
+    else{const t=q[i]/p[i];if(p[i]<0){if(t>t1)return null;if(t>t0)t0=t;}else{if(t<t0)return null;if(t<t1)t1=t;}}}
+  return[[px+t0*dx,py+t0*dy],[px+t1*dx,py+t1*dy]];}
+const inRect=(x,y,r)=>x>=r.x0&&x<=r.x1&&y>=r.y0&&y<=r.y1;
+// procedural scalar field in [0,1]
+function field(kind,x,y,r,s,freq){
+  const cx=(r.x0+r.x1)/2, cy=(r.y0+r.y1)/2, w=(r.x1-r.x0);
+  switch(kind){
+    case'radial':{const d=Math.hypot(x-cx,y-cy)/(w*.6);return clamp(d,0,1);}
+    case'rings':{const d=Math.hypot(x-cx,y-cy);return .5+.5*Math.sin(d*freq*.4);}
+    case'waves':return .5+.5*Math.sin(x*freq*.25+Math.sin(y*freq*.12)*2);
+    case'diag':return .5+.5*Math.sin((x+y)*freq*.18);
+    default:return fbm(x*0.02*freq*4,y*0.02*freq*4,s,4);
+  }
+}
+
+/* ============================== image source ============================== */
+const IMG={loaded:false,w:0,h:0,lum:null,gx:null,gy:null,chr:null,chg:null,chb:null};
+function ingestCanvas(cn){
+  const w=cn.width,h=cn.height,d=cn.getContext('2d').getImageData(0,0,w,h).data;
+  const lum=new Float32Array(w*h),chr=new Float32Array(w*h),chg=new Float32Array(w*h),chb=new Float32Array(w*h);
+  for(let i=0;i<w*h;i++){chr[i]=d[i*4]/255;chg[i]=d[i*4+1]/255;chb[i]=d[i*4+2]/255;
+    lum[i]=0.299*chr[i]+0.587*chg[i]+0.114*chb[i];}
+  const gx=new Float32Array(w*h),gy=new Float32Array(w*h),at=(x,y)=>lum[clamp(y,0,h-1)*w+clamp(x,0,w-1)];
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const tl=at(x-1,y-1),tt=at(x,y-1),tr=at(x+1,y-1),ll=at(x-1,y),rr=at(x+1,y),bl=at(x-1,y+1),bb=at(x,y+1),br=at(x+1,y+1);
+    gx[y*w+x]=(tr+2*rr+br)-(tl+2*ll+bl); gy[y*w+x]=(bl+2*bb+br)-(tl+2*tt+tr);
+  }
+  Object.assign(IMG,{loaded:true,w,h,lum,gx,gy,chr,chg,chb});
+  const tag=document.getElementById('v_img'); if(tag)tag.textContent='loaded';
+}
+function loadImageURL(url){const im=new Image();im.onload=()=>{
+  const md=260,sc=Math.min(md/im.width,md/im.height,1);
+  const w=Math.max(1,Math.round(im.width*sc)),h=Math.max(1,Math.round(im.height*sc));
+  const cn=document.createElement('canvas');cn.width=w;cn.height=h;cn.getContext('2d').drawImage(im,0,0,w,h);
+  ingestCanvas(cn);generate();};im.onerror=()=>toast('image load failed');im.src=url;}
+function makeSample(){const w=240,h=300,cn=document.createElement('canvas');cn.width=w;cn.height=h;const x=cn.getContext('2d');
+  let g=x.createLinearGradient(0,0,w,h);g.addColorStop(0,'#f3ead9');g.addColorStop(1,'#16264a');x.fillStyle=g;x.fillRect(0,0,w,h);
+  let rg=x.createRadialGradient(w*0.42,h*0.38,6,w*0.5,h*0.46,h*0.5);
+  rg.addColorStop(0,'#fff7e8');rg.addColorStop(.55,'#c4763a');rg.addColorStop(1,'#120a06');
+  x.fillStyle=rg;x.beginPath();x.arc(w*0.5,h*0.46,Math.min(w,h)*0.34,0,TAU);x.fill();
+  x.fillStyle='rgba(12,40,46,0.72)';x.beginPath();x.ellipse(w*0.72,h*0.8,46,26,0.5,0,TAU);x.fill();
+  ingestCanvas(cn);generate();}
+function imgMap(x,y,r){const rw=r.x1-r.x0,rh=r.y1-r.y0,sc=Math.min(rw/IMG.w,rh/IMG.h);
+  const ox=r.x0+(rw-IMG.w*sc)/2,oy=r.y0+(rh-IMG.h*sc)/2,ix=(x-ox)/sc,iy=(y-oy)/sc;
+  return(ix<0||iy<0||ix>=IMG.w-1||iy>=IMG.h-1)?null:[ix,iy];}
+function bilin(a,ix,iy){const x0=ix|0,y0=iy|0,fx=ix-x0,fy=iy-y0,w=IMG.w;
+  return a[y0*w+x0]*(1-fx)*(1-fy)+a[y0*w+x0+1]*fx*(1-fy)+a[(y0+1)*w+x0]*(1-fx)*fy+a[(y0+1)*w+x0+1]*fx*fy;}
+function toneAt(x,y,r,P){const m=imgMap(x,y,r);if(!m)return 0;const lv=bilin(IMG.lum,m[0],m[1]);
+  let t=P.invert>0?lv:1-lv;t=(t-.5)*P.contrast+.5;return clamp(t,0,1);}
+function gradAt(x,y,r){const m=imgMap(x,y,r);if(!m)return null;return[bilin(IMG.gx,m[0],m[1]),bilin(IMG.gy,m[0],m[1])];}
+function chanInk(ch,x,y,r,P){ // ink demand for one CMY pass: 1 - channel brightness
+  const m=imgMap(x,y,r);if(!m)return 0;
+  let t=1-bilin(IMG[ch],m[0],m[1]);t=(t-.5)*P.contrast+.5;return clamp(t,0,1);}
+function nnTour(pts,r){ // greedy nearest-neighbour tour, bucket-grid accelerated
+  const n=pts.length;if(n<2)return pts.slice();
+  const cell=Math.max(2,Math.sqrt((r.x1-r.x0)*(r.y1-r.y0)/n)*1.3);
+  const cols=Math.max(1,Math.ceil((r.x1-r.x0)/cell)),rows=Math.max(1,Math.ceil((r.y1-r.y0)/cell));
+  const grid=Array.from({length:cols*rows},()=>[]);
+  const gx=p=>clamp(((p[0]-r.x0)/cell)|0,0,cols-1),gy=p=>clamp(((p[1]-r.y0)/cell)|0,0,rows-1);
+  pts.forEach((p,i)=>grid[gy(p)*cols+gx(p)].push(i));
+  const out=[pts[0]];let last=0;
+  const rm=i=>{const g=grid[gy(pts[i])*cols+gx(pts[i])],k=g.indexOf(i);if(k>=0)g.splice(k,1);};
+  rm(0);
+  for(let k=1;k<n;k++){
+    const lp=pts[last],cx=gx(lp),cy=gy(lp);let best=-1,bd=1e18,found=-1;
+    for(let ring=0;ring<Math.max(cols,rows)+1;ring++){
+      if(found>=0&&ring>found+1)break; // one extra shell after first hit
+      for(let yy=cy-ring;yy<=cy+ring;yy++)for(let xx=cx-ring;xx<=cx+ring;xx++){
+        if(xx<0||yy<0||xx>=cols||yy>=rows)continue;
+        if(Math.max(Math.abs(xx-cx),Math.abs(yy-cy))!==ring)continue;
+        for(const i of grid[yy*cols+xx]){
+          const d=(pts[i][0]-lp[0])**2+(pts[i][1]-lp[1])**2;
+          if(d<bd){bd=d;best=i;if(found<0)found=ring;}
+        }}
+    }
+    if(best<0)break;
+    rm(best);out.push(pts[best]);last=best;
+  }
+  return out;}
+function chaikin(pts){ // one corner-cutting pass -> organic curve
+  if(pts.length<3)return pts;
+  const out=[pts[0]];
+  for(let i=0;i<pts.length-1;i++){const a=pts[i],b=pts[i+1];
+    out.push([a[0]*.75+b[0]*.25,a[1]*.75+b[1]*.25],[a[0]*.25+b[0]*.75,a[1]*.25+b[1]*.75]);}
+  out.push(pts[pts.length-1]);return out;}
+
+/* ---- marching squares: raster field -> contour polylines (the universal vectorizer) ---- */
+function fieldGrid(r,cell,fn){
+  const w=Math.ceil((r.x1-r.x0)/cell)+1,h=Math.ceil((r.y1-r.y0)/cell)+1,v=new Float32Array(w*h);
+  for(let j=0;j<h;j++)for(let i=0;i<w;i++)v[j*w+i]=fn(r.x0+i*cell,r.y0+j*cell);
+  return{w,h,v,x0:r.x0,y0:r.y0,cell};}
+function marchingSquares(g,iso){
+  const{w,h,v,x0,y0,cell}=g,segs=[];
+  const at=(i,j)=>v[j*w+i];
+  const lerpP=(x1,y1,v1,x2,y2,v2)=>{const t=(iso-v1)/((v2-v1)||1e-9);return[x1+(x2-x1)*t,y1+(y2-y1)*t];};
+  for(let j=0;j<h-1;j++)for(let i=0;i<w-1;i++){
+    const tl=at(i,j),tr=at(i+1,j),br=at(i+1,j+1),bl=at(i,j+1);
+    const c=(tl>iso?8:0)|(tr>iso?4:0)|(br>iso?2:0)|(bl>iso?1:0);
+    if(c===0||c===15)continue;
+    const X=x0+i*cell,Y=y0+j*cell;
+    const a=()=>lerpP(X,Y,tl,X+cell,Y,tr),b=()=>lerpP(X+cell,Y,tr,X+cell,Y+cell,br),
+          q=()=>lerpP(X,Y+cell,bl,X+cell,Y+cell,br),d=()=>lerpP(X,Y,tl,X,Y+cell,bl);
+    const T={1:[[d,q]],2:[[q,b]],3:[[d,b]],4:[[a,b]],5:[[d,a],[q,b]],6:[[a,q]],7:[[d,a]],
+             8:[[a,d]],9:[[a,q]],10:[[a,b],[d,q]],11:[[a,b]],12:[[d,b]],13:[[q,b]],14:[[d,q]]}[c];
+    for(const[p1,p2]of T)segs.push([p1(),p2()]);
+  }
+  const key=p=>Math.round(p[0]*50)+','+Math.round(p[1]*50);
+  const adj=new Map();
+  segs.forEach((s,si)=>{for(const e of[0,1]){const k=key(s[e]);
+    if(!adj.has(k))adj.set(k,[]);adj.get(k).push([si,e]);}});
+  const used=new Uint8Array(segs.length),out=[];
+  for(let si=0;si<segs.length;si++){
+    if(used[si])continue;used[si]=1;
+    const chain=[segs[si][0],segs[si][1]];
+    for(const tailward of[1,0]){
+      while(true){
+        const tip=tailward?chain[chain.length-1]:chain[0];
+        const cands=(adj.get(key(tip))||[]).filter(([s])=>!used[s]);
+        if(!cands.length)break;
+        const[s2,e2]=cands[0];used[s2]=1;
+        const np=segs[s2][e2?0:1];
+        tailward?chain.push(np):chain.unshift(np);
+      }}
+    if(chain.length>2)out.push(chain);
+  }
+  return out;}
+/* ---- glyph vectorizer: any browser font -> plottable outlines (cached) ---- */
+const GLYPH_CACHE={};
+const _gcv=document.createElement('canvas');_gcv.width=96;_gcv.height=96;
+function vectorChar(ch,font){
+  const k=font+'|'+ch;
+  if(GLYPH_CACHE[k]!==undefined)return GLYPH_CACHE[k];
+  const x=_gcv.getContext('2d',{willReadFrequently:true});
+  x.clearRect(0,0,96,96);x.font='64px '+font;x.textBaseline='alphabetic';
+  x.fillStyle='#000';x.fillText(ch,16,72);
+  const adv=x.measureText(ch).width/64;
+  const id=x.getImageData(0,0,96,96).data;
+  const g={w:96,h:96,v:new Float32Array(96*96),x0:0,y0:0,cell:1};
+  for(let i=0;i<96*96;i++)g.v[i]=id[i*4+3]/255;
+  const dec=p=>{ // decimate: keep points >=2.5 raster px apart (sub-pen-width at glyph scale)
+    const o=[p[0]];
+    for(let i=1;i<p.length-1;i++){const q=o[o.length-1];
+      if(Math.hypot(p[i][0]-q[0],p[i][1]-q[1])>=2.5)o.push(p[i]);}
+    o.push(p[p.length-1]);return o;};
+  const paths=marchingSquares(g,.5).map(dec).filter(p=>p.length>2)
+    .map(p=>p.map(pt=>[(pt[0]-16)/64,(pt[1]-72)/64]));
+  return GLYPH_CACHE[k]={paths,adv};}
+function edgeFadeFn(r,fade){
+  if(!fade)return()=>1;
+  return(x,y)=>clamp(Math.min(x-r.x0,r.x1-x,y-r.y0,r.y1-y)/fade,0,1);}
+
+/* ============================== generators ============================== */
+// each: {key,label, params:[{key,label,min,max,step,def}], gen(ctx,P)->[{pen,lines:[[[x,y]..]..]}] }
+const GEN={};
+
+GEN.flow={key:'flow',label:'Flow field',
+  params:[
+    {key:'scale',label:'Field scale',min:.004,max:.05,step:.001,def:.014},
+    {key:'turns',label:'Turbulence',min:.5,max:4,step:.1,def:1.6},
+    {key:'step',label:'Step (mm)',min:.6,max:3,step:.1,def:1.4},
+    {key:'len',label:'Max length',min:15,max:240,step:5,def:120},
+    {key:'gap',label:'Seed spacing',min:3,max:16,step:.5,def:6},
+    {key:'jit',label:'Seed jitter',min:0,max:1,step:.05,def:.6},
+    {key:'minlen',label:'Min length',min:0,max:40,step:1,def:6},
+  ],
+  gen(c,P){const r=c.rect,rng=c.rng,out=Array.from({length:c.pens},()=>({pen:0,lines:[]}));
+    out.forEach((o,i)=>o.pen=i);
+    for(let y=r.y0;y<=r.y1;y+=P.gap)for(let x=r.x0;x<=r.x1;x+=P.gap){
+      const sx=x+(rng()-.5)*P.gap*P.jit, sy=y+(rng()-.5)*P.gap*P.jit;
+      if(!inRect(sx,sy,r))continue;
+      const pts=[]; let cx=sx,cy=sy;
+      const steps=Math.floor(P.len/P.step);
+      for(let k=0;k<steps;k++){
+        if(!inRect(cx,cy,r))break; pts.push([cx,cy]);
+        const ang=fbm(cx*P.scale,cy*P.scale,c.seed,5)*TAU*P.turns;
+        cx+=Math.cos(ang)*P.step; cy+=Math.sin(ang)*P.step;
+      }
+      let L=0;for(let k=1;k<pts.length;k++)L+=Math.hypot(pts[k][0]-pts[k-1][0],pts[k][1]-pts[k-1][1]);
+      if(pts.length>1&&L>=P.minlen){
+        const pen=Math.floor(fbm(sx*P.scale,sy*P.scale,c.seed,3)*c.pens)%c.pens;
+        out[pen].lines.push(pts);
+      }
+    }
+    return out;}};
+
+GEN.hatch={key:'hatch',label:'Variable hatch',
+  params:[
+    {key:'angle',label:'Angle (deg)',min:0,max:180,step:1,def:22},
+    {key:'minsp',label:'Min spacing',min:.6,max:5,step:.1,def:1},
+    {key:'maxsp',label:'Max spacing',min:1,max:12,step:.2,def:6},
+    {key:'fieldF',label:'Field freq',min:.2,max:4,step:.1,def:1},
+    {key:'fkind',label:'Field',min:0,max:4,step:1,def:0,enum:['noise','radial','waves','rings','diag']},
+    {key:'cross',label:'Cross-hatch',min:0,max:1,step:1,def:0,enum:['off','on']},
+  ],
+  gen(c,P){const r=c.rect,out=[{pen:0,lines:[]},{pen:1%c.pens,lines:[]}];
+    const pass=(angDeg,pen)=>{
+      const a=angDeg*Math.PI/180, dx=Math.cos(a), dy=Math.sin(a);
+      const nx=-dy, ny=dx; // normal we walk along
+      const corners=[[r.x0,r.y0],[r.x1,r.y0],[r.x0,r.y1],[r.x1,r.y1]];
+      let dmin=1e9,dmax=-1e9;for(const[X,Y]of corners){const d=X*nx+Y*ny;dmin=Math.min(dmin,d);dmax=Math.max(dmax,d);}
+      const cx=(r.x0+r.x1)/2, cy=(r.y0+r.y1)/2;
+      for(let d=dmin;d<=dmax;){
+        const px=cx+nx*(d-(cx*nx+cy*ny)), py=cy+ny*(d-(cx*nx+cy*ny));
+        const fv=field(P.fkind,px,py,r,c.seed,P.fieldF);
+        const seg=clipLine(px,py,dx,dy,r); if(seg)out[pen].lines.push(seg);
+        d+=lerp(P.minsp,P.maxsp,clamp(fv,0,1));
+      }};
+    pass(P.angle,0);
+    if(P.cross>0)pass(P.angle+74,1%c.pens);
+    return out;}};
+
+GEN.rotor={key:'rotor',label:'Rotor / moiré',
+  params:[
+    {key:'bundles',label:'Bundles',min:2,max:14,step:1,def:6},
+    {key:'astep',label:'Angle step',min:1,max:40,step:1,def:11},
+    {key:'spacing',label:'Line spacing',min:1,max:8,step:.2,def:3},
+    {key:'jit',label:'Center drift',min:0,max:30,step:1,def:8},
+    {key:'a0',label:'Base angle',min:0,max:180,step:1,def:0},
+  ],
+  gen(c,P){const r=c.rect,rng=c.rng;const out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
+    const cx=(r.x0+r.x1)/2, cy=(r.y0+r.y1)/2;
+    for(let b=0;b<P.bundles;b++){
+      const a=(P.a0+b*P.astep)*Math.PI/180, dx=Math.cos(a),dy=Math.sin(a),nx=-dy,ny=dx;
+      const ox=(rng()-.5)*P.jit, oy=(rng()-.5)*P.jit;
+      const pen=b%c.pens, half=Math.hypot(r.x1-r.x0,r.y1-r.y0)/2;
+      for(let d=-half;d<=half;d+=P.spacing){
+        const px=cx+ox+nx*d, py=cy+oy+ny*d;
+        const seg=clipLine(px,py,dx,dy,r); if(seg)out[pen].lines.push(seg);
+      }}
+    return out;}};
+
+GEN.dither={key:'dither',label:'ASCII dither',
+  params:[
+    {key:'cell',label:'Cell (mm)',min:1.4,max:7,step:.1,def:3},
+    {key:'fkind',label:'Field',min:0,max:4,step:1,def:1,enum:['noise','radial','waves','rings','diag']},
+    {key:'fieldF',label:'Field freq',min:.2,max:4,step:.1,def:1.2},
+    {key:'glyph',label:'Glyph',min:0,max:3,step:1,def:3,enum:['dot','dash','cross','ramp']},
+    {key:'jit',label:'Jitter',min:0,max:1,step:.05,def:.25},
+    {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
+  ],
+  gen(c,P){const r=c.rect,rng=c.rng;const out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
+    // 4x4 Bayer ordered-dither matrix
+    const B=[[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+    const cs=P.cell, hs=cs*.42;
+    let gi=0,gj=0;
+    for(let y=r.y0+cs/2;y<=r.y1;y+=cs,gj++){gi=0;
+      for(let x=r.x0+cs/2;x<=r.x1;x+=cs,gi++){
+        let g=field(P.fkind,x,y,r,c.seed,P.fieldF); if(P.invert>0)g=1-g;
+        const dark=1-g; // dark => more marks
+        const thr=(B[gj&3][gi&3]+.5)/16;
+        if(dark<=thr)continue;
+        const jx=(rng()-.5)*cs*P.jit, jy=(rng()-.5)*cs*P.jit, X=x+jx, Y=y+jy;
+        const pen=Math.min(c.pens-1,Math.floor(g*c.pens));
+        let level=P.glyph;
+        if(P.glyph===3){ // ramp: density picks glyph dot->dash->cross
+          level = dark>.75?2 : dark>.45?1 : 0;
+        }
+        const L=out[pen].lines;
+        if(level===0){L.push([[X-hs*.35,Y],[X+hs*.35,Y]]);}              // dot (tiny)
+        else if(level===1){L.push([[X-hs,Y],[X+hs,Y]]);}                  // dash
+        else{L.push([[X-hs,Y],[X+hs,Y]]);L.push([[X,Y-hs],[X,Y+hs]]);}   // cross
+      }}
+    return out;}};
+
+GEN.image={key:'image',label:'Image → art',
+  params:[
+    {key:'_file',label:'Your image',type:'file'},
+    {key:'_sample',label:'↻ Load sample image',type:'button'},
+    {key:'mode',label:'Mode',min:0,max:2,step:1,def:0,enum:['dither','hatch','flow']},
+    {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.2},
+    {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
+    {key:'density',label:'Density',min:1,max:5,step:.1,def:1.8},
+    {key:'angle',label:'Hatch angle',min:0,max:180,step:1,def:30},
+    {key:'levels',label:'Hatch tones',min:2,max:6,step:1,def:4},
+    {key:'glyph',label:'Dither glyph',min:0,max:3,step:1,def:3,enum:['dot','dash','cross','ramp']},
+    {key:'flowlen',label:'Flow stroke',min:10,max:120,step:5,def:42},
+  ],
+  gen(c,P){const r=c.rect,rng=c.rng,out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
+    if(!IMG.loaded)return out;
+    if(P.mode===0){ // Bayer dither of image tone
+      const cs=P.density*1.4,hs=cs*.42,B=[[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+      let gj=0;for(let y=r.y0+cs/2;y<=r.y1;y+=cs,gj++){let gi=0;
+        for(let x=r.x0+cs/2;x<=r.x1;x+=cs,gi++){
+          const t=toneAt(x,y,r,P);if(t<=0)continue;
+          if(t<=(B[gj&3][gi&3]+.5)/16)continue;
+          const X=x+(rng()-.5)*cs*.3,Y=y+(rng()-.5)*cs*.3,L=out[0].lines;
+          let lvl=P.glyph;if(P.glyph===3)lvl=t>.75?2:t>.45?1:0;
+          if(lvl===0)L.push([[X-hs*.35,Y],[X+hs*.35,Y]]);
+          else if(lvl===1)L.push([[X-hs,Y],[X+hs,Y]]);
+          else{L.push([[X-hs,Y],[X+hs,Y]]);L.push([[X,Y-hs],[X,Y+hs]]);}
+        }}
+    } else if(P.mode===1){ // tonal multi-pass hatch
+      const cx=(r.x0+r.x1)/2,cy=(r.y0+r.y1)/2;
+      for(let k=0;k<P.levels;k++){const thr=(k+.5)/P.levels;
+        const a=(P.angle+(k>=Math.ceil(P.levels/2)?74:0))*Math.PI/180,dx=Math.cos(a),dy=Math.sin(a),nx=-dy,ny=dx;
+        let dmin=1e9,dmax=-1e9;for(const[X,Y]of[[r.x0,r.y0],[r.x1,r.y0],[r.x0,r.y1],[r.x1,r.y1]]){const dd=X*nx+Y*ny;dmin=Math.min(dmin,dd);dmax=Math.max(dmax,dd);}
+        const pen=k%c.pens;
+        for(let d=dmin;d<=dmax;d+=P.density){
+          const base=d-(cx*nx+cy*ny),seg=clipLine(cx+nx*base,cy+ny*base,dx,dy,r);if(!seg)continue;
+          const len=Math.hypot(seg[1][0]-seg[0][0],seg[1][1]-seg[0][1]),n=Math.max(2,(len/0.8)|0);let run=null;
+          for(let s=0;s<=n;s++){const tt=s/n,X=lerp(seg[0][0],seg[1][0],tt),Y=lerp(seg[0][1],seg[1][1],tt);
+            if(toneAt(X,Y,r,P)>thr){if(!run)run=[];run.push([X,Y]);}else{if(run&&run.length>1)out[pen].lines.push(run);run=null;}}
+          if(run&&run.length>1)out[pen].lines.push(run);
+        }}
+    } else { // contour flow along isophotes (perpendicular to image gradient)
+      const sp=P.density*3,stepLen=1.2,maxSteps=(P.flowlen/1.2)|0,minT=.16;
+      const integ=(px,py,dir)=>{const pts=[[px,py]];let cx=px,cy=py,pa=null;
+        for(let k=0;k<maxSteps;k++){const g=gradAt(cx,cy,r);let ang;
+          if(g&&Math.abs(g[0])+Math.abs(g[1])>.03)ang=Math.atan2(g[0],-g[1]);else ang=fbm(cx*.02,cy*.02,c.seed)*TAU;
+          if(pa!=null){let dd=ang-pa;while(dd>Math.PI)dd-=TAU;while(dd<-Math.PI)dd+=TAU;if(Math.abs(dd)>Math.PI/2)ang+=Math.PI;}
+          pa=ang;cx+=Math.cos(ang)*stepLen*dir;cy+=Math.sin(ang)*stepLen*dir;
+          if(!inRect(cx,cy,r)||toneAt(cx,cy,r,P)<minT)break;pts.push([cx,cy]);}
+        return pts;};
+      for(let y=r.y0;y<=r.y1;y+=sp)for(let x=r.x0;x<=r.x1;x+=sp){
+        const sx=x+(rng()-.5)*sp,sy=y+(rng()-.5)*sp;if(!inRect(sx,sy,r)||toneAt(sx,sy,r,P)<minT)continue;
+        const b=integ(sx,sy,-1).reverse(),f=integ(sx,sy,1),pts=b.concat(f.slice(1));
+        if(pts.length>2)out[Math.min(c.pens-1,(toneAt(sx,sy,r,P)*c.pens)|0)].lines.push(pts);
+      }
+    }
+    return out;}};
+
+GEN.squiggle={key:'squiggle',label:'Squiggle',
+  params:[
+    {key:'_file',label:'Your image',type:'file'},
+    {key:'_sample',label:'↻ Load sample image',type:'button'},
+    {key:'rows',label:'Rows',min:24,max:140,step:2,def:64},
+    {key:'amp',label:'Amplitude',min:.2,max:1,step:.05,def:.85},
+    {key:'freq',label:'Frequency',min:.5,max:5,step:.1,def:2.4},
+    {key:'step',label:'Step (mm)',min:.4,max:2,step:.1,def:.8},
+    {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.3},
+    {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
+    {key:'floor',label:'White skip',min:0,max:.4,step:.02,def:.06},
+    {key:'color',label:'Passes',min:0,max:1,step:1,def:0,enum:['mono','CMY']},
+  ],
+  gen(c,P){const r=c.rect,out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
+    if(!IMG.loaded)return out;
+    const pitch=(r.y1-r.y0)/P.rows,half=pitch*.48;
+    const passes=P.color===1?[['chr',0],['chg',1],['chb',2]]:[[null,0]];
+    for(const[ch,pi]of passes){
+      const pen=Math.min(pi,c.pens-1);
+      for(let ri=0;ri<P.rows;ri++){
+        const yr=r.y0+pitch*(ri+.5)+(ch?(pi-1)*pitch/3:0);
+        if(yr<r.y0||yr>r.y1)continue;
+        const ltr=ri%2===0;let phase=0,run=[];
+        const x0=ltr?r.x0:r.x1,xe=ltr?r.x1:r.x0,dx=ltr?P.step:-P.step;
+        for(let x=x0;ltr?x<=xe:x>=xe;x+=dx){
+          const t=ch?chanInk(ch,x,yr,r,P):toneAt(x,yr,r,P);
+          if(t<=P.floor){if(run.length>1)out[pen].lines.push(run);run=[];phase=0;continue;}
+          phase+=P.step*(0.35+t*P.freq);
+          run.push([x,yr+Math.sin(phase)*half*P.amp*Math.pow(t,.75)]);
+        }
+        if(run.length>1)out[pen].lines.push(run);
+      }}
+    return out;}};
+
+GEN.scribble={key:'scribble',label:'Scribble',
+  params:[
+    {key:'_file',label:'Your image',type:'file'},
+    {key:'_sample',label:'↻ Load sample image',type:'button'},
+    {key:'points',label:'Points',min:600,max:6000,step:100,def:2600},
+    {key:'smooth',label:'Smoothing',min:0,max:3,step:1,def:2},
+    {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.3},
+    {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
+    {key:'floor',label:'White skip',min:.02,max:.5,step:.02,def:.12},
+    {key:'tones',label:'Tone pens',min:1,max:3,step:1,def:1},
+  ],
+  gen(c,P){const r=c.rect,rng=c.rng,out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
+    if(!IMG.loaded)return out;
+    const pts=[];let tries=0;
+    while(pts.length<P.points&&tries<P.points*40){tries++;
+      const x=r.x0+rng()*(r.x1-r.x0),y=r.y0+rng()*(r.y1-r.y0);
+      const t=toneAt(x,y,r,P);if(t<=P.floor)continue;
+      if(rng()<Math.pow(t,1.7))pts.push([x,y,t]);}
+    if(pts.length<2)return out;
+    const nb=clamp(P.tones|0,1,3);
+    const bands=Array.from({length:nb},()=>[]);
+    for(const p of pts)bands[Math.min(nb-1,Math.floor((1-p[2])*nb))].push(p);
+    bands.forEach((arr,b)=>{
+      if(arr.length<2)return;
+      let line=nnTour(arr,r).map(p=>[p[0],p[1]]);
+      for(let s=0;s<P.smooth;s++)line=chaikin(line);
+      out[Math.min(b,c.pens-1)].lines.push(line);
+    });
+    return out;}};
+
+GEN.spiral={key:'spiral',label:'Spiral shade',
+  params:[
+    {key:'_file',label:'Your image',type:'file'},
+    {key:'_sample',label:'↻ Load sample image',type:'button'},
+    {key:'pitch',label:'Ring pitch',min:1.2,max:6,step:.1,def:2.6},
+    {key:'wob',label:'Wobble freq',min:.5,max:6,step:.1,def:3},
+    {key:'amp',label:'Amplitude',min:.2,max:1,step:.05,def:.85},
+    {key:'step',label:'Step (mm)',min:.4,max:1.5,step:.1,def:.7},
+    {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.3},
+    {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
+    {key:'floor',label:'White skip',min:0,max:.4,step:.02,def:.04},
+  ],
+  gen(c,P){const r=c.rect,out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
+    if(!IMG.loaded)return out;
+    const cx=(r.x0+r.x1)/2,cy=(r.y0+r.y1)/2;
+    const rmax=Math.hypot(r.x1-r.x0,r.y1-r.y0)/2;
+    let th=0,phase=0,run=[];
+    const flush=()=>{if(run.length>1)out[0].lines.push(run);run=[];};
+    while(true){
+      const rad=P.pitch*th/TAU;if(rad>rmax)break;
+      const bx=cx+rad*Math.cos(th),by=cy+rad*Math.sin(th);
+      th+=P.step/Math.max(rad,P.step);
+      if(!inRect(bx,by,r)){flush();continue;}
+      const t=toneAt(bx,by,r,P);
+      if(t<=P.floor){flush();phase=0;continue;}
+      phase+=P.step*(0.3+t*P.wob);
+      const off=Math.sin(phase)*(P.pitch*.48)*P.amp*Math.pow(t,.75);
+      run.push([bx+off*Math.cos(th),by+off*Math.sin(th)]);
+    }
+    flush();
+    return out;}};
+
+GEN.topo={key:'topo',label:'Topo glyphs',
+  params:[
+    {key:'_file',label:'Your image (altitude/photo)',type:'file'},
+    {key:'_sample',label:'↻ Load sample image',type:'button'},
+    {key:'levels',label:'Contour levels',min:0,max:10,step:1,def:5},
+    {key:'csmooth',label:'Contour smooth',min:0,max:3,step:1,def:1},
+    {key:'charset',label:'Glyph ramp (light→dark)',type:'text',def:'.:x#'},
+    {key:'gfont',label:'Glyph font',type:'text',def:'monospace'},
+    {key:'gmode',label:'Glyph mode',min:0,max:2,step:1,def:2,enum:['density','size','both']},
+    {key:'gmin',label:'Glyph min (mm)',min:1,max:6,step:.2,def:1.6},
+    {key:'gmax',label:'Glyph max (mm)',min:2,max:10,step:.2,def:4},
+    {key:'spacing',label:'Cell (mm)',min:2.5,max:12,step:.5,def:5},
+    {key:'jit',label:'Grid jitter',min:0,max:1,step:.05,def:.35},
+    {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.2},
+    {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
+    {key:'floor',label:'White skip',min:0,max:.5,step:.02,def:.1},
+    {key:'fade',label:'Edge fade (mm)',min:0,max:40,step:1,def:0},
+  ],
+  gen(c,P){const r=c.rect,rng=c.rng,out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
+    if(!IMG.loaded)return out;
+    const fadeM=edgeFadeFn(r,P.fade);
+    if(P.levels>0){
+      const g=fieldGrid(r,2.0,(x,y)=>toneAt(x,y,r,P));
+      for(let k=1;k<=P.levels;k++){
+        for(let p of marchingSquares(g,k/(P.levels+1))){
+          for(let s=0;s<P.csmooth;s++)p=chaikin(p);
+          let run=[];
+          for(const pt of p){
+            if(rng()<fadeM(pt[0],pt[1]))run.push(pt);
+            else{if(run.length>1)out[0].lines.push(run);run=[];}
+          }
+          if(run.length>1)out[0].lines.push(run);
+        }}}
+    const ramp=(P.charset&&P.charset.length)?P.charset:'x';
+    for(let y=r.y0+P.spacing/2;y<=r.y1;y+=P.spacing)
+      for(let x=r.x0+P.spacing/2;x<=r.x1;x+=P.spacing){
+        const gx=x+(rng()-.5)*P.spacing*P.jit,gy=y+(rng()-.5)*P.spacing*P.jit;
+        const t=toneAt(gx,gy,r,P);if(t<=P.floor)continue;
+        if(rng()>fadeM(gx,gy))continue;
+        const u=clamp((t-P.floor)/(1-P.floor),0,1);
+        const ch=P.gmode===1?ramp[ramp.length-1]:ramp[Math.min(ramp.length-1,(u*ramp.length)|0)];
+        if(!ch||ch===' ')continue;
+        const size=P.gmode===0?P.gmin:lerp(P.gmin,P.gmax,Math.pow(u,.8));
+        const gl=vectorChar(ch,P.gfont||'monospace');if(!gl||!gl.paths.length)continue;
+        const pen=c.pens>1?Math.min(c.pens-1,(u*c.pens)|0):0;
+        for(const path of gl.paths)
+          out[pen].lines.push(path.map(p=>[gx+(p[0]-gl.adv/2)*size,gy+(p[1]+.32)*size]));
+      }
+    return out;}};
+
+GEN.type={key:'type',label:'Typography',
+  params:[
+    {key:'text',label:'Text',type:'text',def:'CASCADIA'},
+    {key:'font',label:'Font (CSS name)',type:'text',def:'Georgia'},
+    {key:'_fontfile',label:'Load font file (.ttf/.otf)',type:'file',kind:'font'},
+    {key:'size',label:'Size (mm)',min:6,max:80,step:1,def:34},
+    {key:'track',label:'Tracking (em)',min:-.05,max:.3,step:.01,def:.02},
+    {key:'ypos',label:'Vertical pos',min:.1,max:.9,step:.02,def:.5},
+    {key:'outline',label:'Outline',min:0,max:1,step:1,def:1,enum:['off','on']},
+    {key:'hatch',label:'Fill hatch',min:0,max:1,step:1,def:0,enum:['off','on']},
+    {key:'hsp',label:'Hatch spacing',min:.6,max:4,step:.1,def:1.2},
+    {key:'hang',label:'Hatch angle',min:0,max:180,step:5,def:45},
+  ],
+  gen(c,P){const r=c.rect,out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
+    const text=(P.text||'');if(!text.trim())return out;
+    const font=P.font||'Georgia';
+    const glyphs=[];let adv=0;
+    for(const ch of text){
+      if(ch===' '){adv+=.45+P.track;continue;}
+      const g=vectorChar(ch,font);if(!g)continue;
+      glyphs.push([g,adv]);adv+=g.adv+P.track;
+    }
+    const W=adv*P.size,X0=(r.x0+r.x1)/2-W/2,Y=r.y0+(r.y1-r.y0)*P.ypos;
+    if(P.outline)for(const[g,off]of glyphs)for(const path of g.paths)
+      out[0].lines.push(path.map(p=>[X0+(off+p[0])*P.size,Y+p[1]*P.size]));
+    if(P.hatch){
+      const sc=4,cv2=document.createElement('canvas');
+      cv2.width=Math.min(4000,Math.ceil(W*sc)+8);cv2.height=Math.ceil(P.size*1.5*sc);
+      const x2=cv2.getContext('2d',{willReadFrequently:true});
+      x2.font=(P.size*sc)+'px '+font;x2.textBaseline='alphabetic';x2.fillStyle='#000';
+      let ox=4;for(const ch of text){x2.fillText(ch,ox,P.size*sc);ox+=x2.measureText(ch).width+P.track*P.size*sc;}
+      const id=x2.getImageData(0,0,cv2.width,cv2.height).data;
+      const inside=(x,y)=>{const px=((x-X0)*sc+4)|0,py=((y-(Y-P.size))*sc)|0;
+        if(px<0||py<0||px>=cv2.width||py>=cv2.height)return false;
+        return id[(py*cv2.width+px)*4+3]>127;};
+      const a=P.hang*Math.PI/180,dx=Math.cos(a),dy=Math.sin(a),nx=-dy,ny=dx;
+      const cxm=X0+W/2,cym=Y-P.size*.35,half=Math.hypot(W,P.size)*.75;
+      const pen=Math.min(1,c.pens-1);
+      for(let dd=-half;dd<=half;dd+=P.hsp){
+        const px=cxm+nx*dd,py=cym+ny*dd;let run=[];
+        for(let s=-half;s<=half;s+=.5){
+          const X=px+dx*s,Yp=py+dy*s;
+          if(inside(X,Yp))run.push([X,Yp]);
+          else{if(run.length>1)out[pen].lines.push(run);run=[];}
+        }
+        if(run.length>1)out[pen].lines.push(run);
+      }}
+    return out;}};
+
+GEN.chartrace={key:'chartrace',label:'Trace / ink',
+  params:[
+    {key:'_file',label:'Character / image',type:'file'},
+    {key:'_sample',label:'↻ Load sample image',type:'button'},
+    {key:'levels',label:'Posterize levels',min:2,max:6,step:1,def:3},
+    {key:'csmooth',label:'Smooth',min:0,max:3,step:1,def:1},
+    {key:'detail',label:'Detail (mm cell)',min:.8,max:4,step:.1,def:1.4},
+    {key:'hatch',label:'Hatch dark areas',min:0,max:1,step:1,def:1,enum:['off','on']},
+    {key:'hsp',label:'Hatch spacing',min:.8,max:5,step:.1,def:1.8},
+    {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.2},
+    {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
+    {key:'fade',label:'Edge fade (mm)',min:0,max:40,step:1,def:0},
+  ],
+  gen(c,P){const r=c.rect,rng=c.rng,out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
+    if(!IMG.loaded)return out;
+    const fadeM=edgeFadeFn(r,P.fade);
+    const g=fieldGrid(r,P.detail,(x,y)=>toneAt(x,y,r,P));
+    for(let k=1;k<=P.levels;k++){
+      for(let p of marchingSquares(g,k/(P.levels+1))){
+        for(let s=0;s<P.csmooth;s++)p=chaikin(p);
+        let run=[];
+        for(const pt of p){
+          if(rng()<fadeM(pt[0],pt[1]))run.push(pt);
+          else{if(run.length>1)out[0].lines.push(run);run=[];}
+        }
+        if(run.length>1)out[0].lines.push(run);
+      }}
+    if(P.hatch>0){
+      const pen=Math.min(1,c.pens-1);
+      const bands=[[P.levels/(P.levels+1),P.hsp],[(P.levels-1)/(P.levels+1),P.hsp*2.2]];
+      for(const[thr,sp]of bands){
+        for(let y=r.y0;y<=r.y1;y+=sp){
+          let run=[];
+          for(let x=r.x0;x<=r.x1;x+=.6){
+            if(toneAt(x,y,r,P)>thr&&rng()<fadeM(x,y))run.push([x,y]);
+            else{if(run.length>1)out[pen].lines.push(run);run=[];}
+          }
+          if(run.length>1)out[pen].lines.push(run);
+        }}}
+    return out;}};
+
+const ORDER=['flow','hatch','rotor','dither','image','squiggle','scribble','spiral','topo','chartrace','type'];
+const IMG_GENS=new Set(['image','squiggle','scribble','spiral','topo','chartrace']);
+
+/* ============================== palettes ============================== */
+const PALETTES=[
+  {name:'Black',cols:['#111111']},
+  {name:'Ink+Crimson',cols:['#14161c','#b23b3b']},
+  {name:'Trio',cols:['#274b8f','#b23b3b','#2c8a7a']},
+  {name:'Sepia',cols:['#3a2a1a','#9c6b3f','#c9a36a']},
+  {name:'CMY',cols:['#0090b8','#c2187c','#dcb400']},
+];
+
+/* ============================== state ============================== */
+const PAPER={A4:[210,297],A5:[148,210],A6:[105,148]};
+let state={gen:'flow', seed:1337, paletteI:0, paper:'A4', orient:'P', margin:15, params:{}};
+function defaultsFor(key){const p={};for(const d of GEN[key].params)p[d.key]=d.def;return p;}
+state.params=defaultsFor('flow');
+
+let lastLayers=null,rawLayers=null,viewScale=1;
+
+/* ============================== build / render ============================== */
+const $=id=>document.getElementById(id);
+const cv=$('stage'), ctx=cv.getContext('2d');
+
+function paperDims(){let[w,h]=PAPER[state.paper];return state.orient==='L'?[h,w]:[w,h];}
+function rectMM(){const[w,h]=paperDims();const m=state.margin;return{x0:m,y0:m,x1:w-m,y1:h-m,W:w,H:h};}
+
+function generate(){
+  const r=rectMM();
+  const ctxg={rect:r, rng:rngFrom(state.seed), seed:(state.seed>>>0), pens:PALETTES[state.paletteI].cols.length};
+  rawLayers=GEN[state.gen].gen(ctxg, state.params);
+  lastLayers=applyMask(rawLayers);
+  render(); updateHUD();
+}
+
+function render(){
+  const[w,h]=paperDims(), dpr=Math.min(devicePixelRatio||1,2);
+  const main=cv.parentElement, availW=main.clientWidth-90, availH=main.clientHeight-90;
+  const sc=Math.min(availW/w, availH/h);
+  viewScale=sc;
+  cv.width=Math.round(w*sc*dpr); cv.height=Math.round(h*sc*dpr);
+  cv.style.width=(w*sc)+'px'; cv.style.height=(h*sc)+'px';
+  ctx.setTransform(sc*dpr,0,0,sc*dpr,0,0);
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
+  // margin guide + corner ticks
+  const r=rectMM();
+  ctx.strokeStyle='#e9e6df'; ctx.lineWidth=.3; ctx.setLineDash([2,2]);
+  ctx.strokeRect(r.x0,r.y0,r.x1-r.x0,r.y1-r.y0); ctx.setLineDash([]);
+  ctx.strokeStyle='#d8d2c4'; ctx.lineWidth=.4;
+  for(const[X,Y]of[[r.x0,r.y0],[r.x1,r.y0],[r.x0,r.y1],[r.x1,r.y1]]){
+    ctx.beginPath();ctx.moveTo(X-2,Y);ctx.lineTo(X+2,Y);ctx.moveTo(X,Y-2);ctx.lineTo(X,Y+2);ctx.stroke();}
+  // artwork
+  const pal=PALETTES[state.paletteI].cols;
+  ctx.lineCap='round'; ctx.lineJoin='round'; ctx.lineWidth=.35;
+  for(const layer of lastLayers){
+    ctx.strokeStyle=pal[layer.pen%pal.length]; ctx.beginPath();
+    for(const ln of layer.lines){if(ln.length<2)continue;ctx.moveTo(ln[0][0],ln[0][1]);
+      for(let i=1;i<ln.length;i++)ctx.lineTo(ln[i][0],ln[i][1]);}
+    ctx.stroke();
+  }
+  // mask overlay (grey = thinned, dark = cut) + lasso-in-progress
+  if(MASK.cv&&MASK.show&&(MASK.tool||MASK.dirty||painting)){
+    ctx.save();ctx.globalAlpha=.34;ctx.globalCompositeOperation='multiply';
+    ctx.drawImage(MASK.cv,0,0,w,h);ctx.restore();
+  }
+  if(MASK.lasso.length){
+    ctx.save();ctx.strokeStyle='#d7a64b';ctx.lineWidth=.6;ctx.setLineDash([2,2]);
+    ctx.beginPath();ctx.moveTo(MASK.lasso[0][0],MASK.lasso[0][1]);
+    for(const p of MASK.lasso)ctx.lineTo(p[0],p[1]);
+    ctx.stroke();ctx.restore();
+  }
+}
+
+function stats(){let n=0,seg=0;for(const l of lastLayers||[]){n+=l.lines.length;
+  for(const ln of l.lines)seg+=Math.max(0,ln.length-1);}return{n,seg};}
+function updateHUD(){const[w,h]=paperDims(),s=stats();
+  $('hud').innerHTML=`<span><b>${state.gen}</b></span><span>seed <b>${state.seed}</b></span>`+
+    `<span><b>${w}×${h}</b> mm</span><span><b>${s.n}</b> paths · <b>${s.seg}</b> segs</span>`;}
+
+/* ============================== SVG export ============================== */
+function toSVG(){
+  const[w,h]=paperDims(), pal=PALETTES[state.paletteI].cols;
+  const f=v=>(+v).toFixed(3);
+  let s=`<?xml version="1.0" encoding="UTF-8"?>\n`+
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}mm" height="${h}mm" viewBox="0 0 ${w} ${h}">\n`+
+    `<!-- polargraph-studio | gen=${state.gen} seed=${state.seed} `+
+    `params=${JSON.stringify(state.params)} -->\n`;
+  lastLayers.forEach((layer,i)=>{
+    if(!layer.lines.length)return;
+    s+=`<g id="pen${layer.pen}" stroke="${pal[layer.pen%pal.length]}" fill="none" `+
+       `stroke-width="0.3" stroke-linecap="round" stroke-linejoin="round">\n`;
+    for(const ln of layer.lines){if(ln.length<2)continue;
+      s+=`<polyline points="${ln.map(p=>f(p[0])+','+f(p[1])).join(' ')}"/>\n`;}
+    s+=`</g>\n`;
+  });
+  return s+`</svg>\n`;
+}
+function download(){
+  const blob=new Blob([toSVG()],{type:'image/svg+xml'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`polargraph_${state.gen}_${state.seed}.svg`; a.click();
+  URL.revokeObjectURL(a.href); toast('SVG exported → ready for the pipeline');
+}
+
+/* ============================== UI wiring ============================== */
+function buildGens(){const g=$('gens');g.innerHTML='';for(const k of ORDER){
+  const b=document.createElement('button');b.textContent=GEN[k].label;b.dataset.k=k;
+  if(k===state.gen)b.className='on';
+  b.onclick=()=>{state.gen=k;state.params=defaultsFor(k);buildGens();buildParams();
+    if(IMG_GENS.has(k)&&!IMG.loaded)makeSample();else generate();};
+  g.appendChild(b);}}
+function buildParams(){const wrap=$('params');wrap.innerHTML='';
+  const fmt=(d,v)=>d.enum?d.enum[v]:(Number.isInteger(d.step)?v:(+v).toFixed(d.step<.01?3:(d.step<1?2:0)));
+  for(const d of GEN[state.gen].params){
+    if(d.type==='file'){
+      const row=document.createElement('div');row.className='row';
+      const isFont=d.kind==='font';
+      const tagId=isFont?'v_font':'v_img';
+      row.innerHTML=`<div class="top"><span class="name">${d.label}</span><span class="val" id="${tagId}">${isFont?'system':(IMG.loaded?'loaded':'none')}</span></div>`;
+      const inp=document.createElement('input');inp.type='file';
+      inp.accept=isFont?'.ttf,.otf,.woff,.woff2':'image/*';
+      inp.style.cssText='width:100%;font-family:var(--mono);font-size:10px;color:var(--dim)';
+      inp.onchange=e=>{const f=e.target.files[0];if(!f)return;
+        const fr=new FileReader();
+        if(isFont){
+          fr.onload=async()=>{try{
+            const ff=new FontFace('UserFont',fr.result);await ff.load();document.fonts.add(ff);
+            for(const k in GLYPH_CACHE)delete GLYPH_CACHE[k];
+            if(state.params.font!==undefined)state.params.font='UserFont';
+            const el=document.getElementById('v_font');if(el)el.textContent=f.name;
+            buildParams();generate();toast('Font loaded: '+f.name);
+          }catch(err){toast('Font load failed');}};
+          fr.readAsArrayBuffer(f);
+        }else{
+          fr.onload=()=>loadImageURL(fr.result);fr.readAsDataURL(f);
+        }};
+      row.appendChild(inp);wrap.appendChild(row);continue;
+    }
+    if(d.type==='text'){
+      const row=document.createElement('div');row.className='row';
+      row.innerHTML=`<div class="top"><span class="name">${d.label}</span></div>`;
+      const inp=document.createElement('input');inp.type='text';inp.value=state.params[d.key]??d.def??'';
+      inp.style.cssText='width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);'+
+        'border-radius:7px;padding:8px 9px;font-family:var(--mono);font-size:12px';
+      inp.oninput=()=>{state.params[d.key]=inp.value;schedule();};
+      row.appendChild(inp);wrap.appendChild(row);continue;
+    }
+    if(d.type==='button'){
+      const b=document.createElement('button');b.textContent=d.label;
+      b.style.cssText='width:100%;margin:0 0 8px;padding:9px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;font-family:var(--mono);font-size:11px;cursor:pointer';
+      b.onmouseenter=()=>b.style.borderColor='var(--accent)';b.onmouseleave=()=>b.style.borderColor='var(--line)';
+      b.onclick=()=>makeSample();wrap.appendChild(b);continue;
+    }
+    const row=document.createElement('div');row.className='row';
+    const v=state.params[d.key];
+    row.innerHTML=`<div class="top"><span class="name">${d.label}</span>`+
+      `<span class="val" id="v_${d.key}">${fmt(d,v)}</span></div>`;
+    const inp=document.createElement('input');inp.type='range';inp.min=d.min;inp.max=d.max;inp.step=d.step;inp.value=v;
+    inp.oninput=()=>{state.params[d.key]=parseFloat(inp.value);$('v_'+d.key).textContent=fmt(d,state.params[d.key]);schedule();};
+    row.appendChild(inp);wrap.appendChild(row);
+  }}
+function buildPalettes(){const p=$('palettes');p.innerHTML='';PALETTES.forEach((pal,i)=>{
+  const el=document.createElement('div');el.className='sw'+(i===state.paletteI?' on':'');
+  el.innerHTML=`<i>${pal.cols.map(c=>`<u style="background:${c}"></u>`).join('')}</i>${pal.name}`;
+  el.onclick=()=>{state.paletteI=i;buildPalettes();generate();};p.appendChild(el);});}
+
+let timer=null; function schedule(){clearTimeout(timer);timer=setTimeout(generate,55);}
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1600);}
+
+$('seed').oninput=e=>{state.seed=parseInt(e.target.value||'0',10)|0;schedule();};
+$('dice').onclick=()=>{state.seed=(Math.random()*1e9)|0;$('seed').value=state.seed;generate();};
+$('paper').onchange=e=>{state.paper=e.target.value;maskInit();generate();};
+$('orient').onchange=e=>{state.orient=e.target.value;maskInit();generate();};
+$('margin').oninput=e=>{state.margin=+e.target.value;$('marginV').textContent=state.margin+' mm';schedule();};
+$('export').onclick=download;
+$('regen').onclick=generate;
+/* ---- mask / retouch: paint density control, applied before preview/export/plot ---- */
+const MASK={cv:null,ctx:null,data:null,scale:2,tool:0,value:0,size:16,soft:.6,show:true,
+  lasso:[],dirty:false};
+function maskInit(){
+  const[w,h]=paperDims();
+  const cvm=document.createElement('canvas');
+  cvm.width=Math.round(w*MASK.scale);cvm.height=Math.round(h*MASK.scale);
+  const x=cvm.getContext('2d',{willReadFrequently:true});
+  x.fillStyle='#fff';x.fillRect(0,0,cvm.width,cvm.height);
+  MASK.cv=cvm;MASK.ctx=x;MASK.dirty=false;MASK.lasso=[];maskSync();}
+function maskSync(){MASK.data=MASK.ctx.getImageData(0,0,MASK.cv.width,MASK.cv.height);}
+function maskAt(x,y){
+  if(!MASK.data)return 1;
+  const px=(x*MASK.scale)|0,py=(y*MASK.scale)|0;
+  if(px<0||py<0||px>=MASK.cv.width||py>=MASK.cv.height)return 1;
+  return MASK.data.data[(py*MASK.cv.width+px)*4]/255;}
+function stamp(mx,my){
+  const x=MASK.ctx,v=Math.round(MASK.value*255),rad=Math.max(1,MASK.size*MASK.scale/2);
+  const px=mx*MASK.scale,py=my*MASK.scale;
+  if(MASK.soft>0.02){
+    const g=x.createRadialGradient(px,py,rad*(1-MASK.soft),px,py,rad);
+    g.addColorStop(0,`rgba(${v},${v},${v},0.9)`);g.addColorStop(1,`rgba(${v},${v},${v},0)`);
+    x.fillStyle=g;
+  }else x.fillStyle=`rgb(${v},${v},${v})`;
+  x.beginPath();x.arc(px,py,rad,0,TAU);x.fill();}
+function resampleLn(ln,step){
+  const o=[ln[0]];
+  for(let i=1;i<ln.length;i++){
+    const a=ln[i-1],b=ln[i],d=Math.hypot(b[0]-a[0],b[1]-a[1]);
+    const n=Math.max(1,Math.ceil(d/step));
+    for(let k=1;k<=n;k++)o.push([a[0]+(b[0]-a[0])*k/n,a[1]+(b[1]-a[1])*k/n]);
+  }
+  return o;}
+function applyMask(layers){
+  if(!MASK.data||!MASK.dirty)return layers;
+  const rng=rngFrom(((state.seed^0x5EED)>>>0)||1);
+  return layers.map(L=>{
+    const lines=[];
+    for(let ln of L.lines){
+      let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+      for(const p of ln){x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);y0=Math.min(y0,p[1]);y1=Math.max(y1,p[1]);}
+      if(x1-x0<6&&y1-y0<6){ // glyph-sized stamp: keep/drop whole (no half-erased letters)
+        if(rng()<maskAt((x0+x1)/2,(y0+y1)/2))lines.push(ln);
+        continue;}
+      ln=resampleLn(ln,1.5);
+      let run=[];
+      for(const p of ln){
+        if(rng()<maskAt(p[0],p[1]))run.push(p);
+        else{if(run.length>1)lines.push(run);run=[];}
+      }
+      if(run.length>1)lines.push(run);
+    }
+    return{pen:L.pen,lines};});}
+function remask(){lastLayers=applyMask(rawLayers||[]);render();updateHUD();}
+function maskBlur(radMm=3){
+  const W=MASK.cv.width,H=MASK.cv.height,r=Math.max(1,Math.round(radMm*MASK.scale));
+  const src=MASK.data.data,a=new Float32Array(W*H),b=new Float32Array(W*H);
+  for(let i=0;i<W*H;i++)a[i]=src[i*4];
+  for(let y=0;y<H;y++){const row=y*W;let sum=0;
+    for(let x=-r;x<=r;x++)sum+=a[row+clamp(x,0,W-1)];
+    for(let x=0;x<W;x++){b[row+x]=sum/(2*r+1);
+      sum+=a[row+clamp(x+r+1,0,W-1)]-a[row+clamp(x-r,0,W-1)];}}
+  for(let x=0;x<W;x++){let sum=0;
+    for(let y=-r;y<=r;y++)sum+=b[clamp(y,0,H-1)*W+x];
+    for(let y=0;y<H;y++){a[y*W+x]=sum/(2*r+1);
+      sum+=b[clamp(y+r+1,0,H-1)*W+x]-b[clamp(y-r,0,H-1)*W+x];}}
+  const id=MASK.ctx.createImageData(W,H);
+  for(let i=0;i<W*H;i++){const v=a[i]|0;
+    id.data[i*4]=v;id.data[i*4+1]=v;id.data[i*4+2]=v;id.data[i*4+3]=255;}
+  MASK.ctx.putImageData(id,0,0);MASK.data=id;MASK.dirty=true;remask();}
+/* mask UI wiring */
+document.querySelectorAll('#masktools button[data-t]').forEach(b=>{
+  b.onclick=()=>{MASK.tool=+b.dataset.t;MASK.lasso=[];
+    document.querySelectorAll('#masktools button[data-t]').forEach(x=>x.classList.toggle('on',x===b));
+    cv.style.cursor=MASK.tool?'crosshair':'default';render();};});
+$('maskshow').onclick=()=>{MASK.show=!MASK.show;$('maskshow').classList.toggle('on',MASK.show);render();};
+$('meffect').oninput=e=>{MASK.value=+e.target.value;
+  $('v_meffect').textContent=MASK.value<=0?'cut':(MASK.value>=1?'restore':'thin '+Math.round((1-MASK.value)*100)+'%');};
+$('msize').oninput=e=>{MASK.size=+e.target.value;$('v_msize').textContent=MASK.size+' mm';};
+$('msoft').oninput=e=>{MASK.soft=+e.target.value;$('v_msoft').textContent=(+MASK.soft).toFixed(2);};
+$('mblur').onclick=()=>{if(MASK.dirty){maskSnap();maskBlur(3);}else toast('Nothing to smear yet');};
+$('mclear').onclick=()=>{maskInit();remask();toast('Mask cleared');};
+const evtMM=e=>[e.offsetX/viewScale,e.offsetY/viewScale];
+const MUNDO=[]; // mask undo stack (last 10 strokes)
+function maskSnap(){if(MUNDO.length>9)MUNDO.shift();
+  MUNDO.push(MASK.ctx.getImageData(0,0,MASK.cv.width,MASK.cv.height));}
+function maskUndo(){if(!MUNDO.length)return;
+  MASK.ctx.putImageData(MUNDO.pop(),0,0);maskSync();
+  const d=MASK.data.data;let dirty=false;
+  for(let i=0;i<d.length;i+=4)if(d[i]<250){dirty=true;break;}
+  MASK.dirty=dirty;remask();toast('Mask undo');}
+let painting=false;
+cv.addEventListener('pointerdown',e=>{
+  if(!MASK.tool)return;e.preventDefault();
+  const[mx,my]=evtMM(e);
+  if(MASK.tool===2){MASK.lasso.push([mx,my]);render();return;}
+  maskSnap();painting=true;stamp(mx,my);render();});
+cv.addEventListener('pointermove',e=>{
+  if(!painting||MASK.tool!==1)return;
+  const[mx,my]=evtMM(e);stamp(mx,my);render();});
+window.addEventListener('pointerup',()=>{
+  if(painting){painting=false;maskSync();MASK.dirty=true;remask();}});
+cv.addEventListener('dblclick',e=>{
+  if(MASK.tool!==2||MASK.lasso.length<3)return;
+  maskSnap();
+  const x=MASK.ctx,v=Math.round(MASK.value*255);
+  x.fillStyle=`rgb(${v},${v},${v})`;x.beginPath();
+  x.moveTo(MASK.lasso[0][0]*MASK.scale,MASK.lasso[0][1]*MASK.scale);
+  for(const p of MASK.lasso)x.lineTo(p[0]*MASK.scale,p[1]*MASK.scale);
+  x.closePath();x.fill();
+  MASK.lasso=[];maskSync();MASK.dirty=true;remask();});
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&MASK.lasso.length){MASK.lasso=[];render();}
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();maskUndo();}});
+/* ---- plot over the studio server ---- */
+let plotting=false;
+async function pollPlot(){
+  let s;
+  try{s=await(await fetch('/status')).json();}catch(e){plotting=false;resetPlotBtn();return;}
+  const b=$('plot');
+  if(s.state==='plotting'){
+    plotting=true;
+    const pct=s.total?Math.round(100*s.acked/s.total):0;
+    b.textContent='■ STOP — '+pct+'%'+(s.errors?(' · err '+s.errors):'');
+    b.classList.add('stop');
+    setTimeout(pollPlot,900);
+  }else{
+    if(plotting)toast(s.state==='done'?'Plot complete ✓':'Plot '+s.state+(s.detail?' — '+s.detail:''));
+    plotting=false;resetPlotBtn();
+  }
+}
+function resetPlotBtn(){const b=$('plot');b.textContent='► PLOT';b.classList.remove('stop');}
+$('plot').onclick=async()=>{
+  if(plotting){await fetch('/stop',{method:'POST'});toast('Stopping…');return;}
+  let dry;
+  const svg=toSVG(),anchor=$('anchor').value,pass=$('pass').value;
+  const q='mode='+anchor+(pass>=0?'&layer='+pass:'');
+  try{dry=await(await fetch('/plot?dry=1&'+q,{method:'POST',body:svg})).json();}
+  catch(e){toast('No studio server — run: python tools/studio_server.py');return;}
+  if(dry.error){toast('Error: '+dry.error);return;}
+  const mins=dry.est_min<1?'<1':dry.est_min.toFixed(1);
+  if(!confirm('Plot this'+(pass>=0?' (pass '+(+pass+1)+')':'')+'?\n~'+mins+' min · '
+      +dry.segments+' segments · '+Math.round(dry.draw_mm/10)/100+' m of ink'))return;
+  const res=await(await fetch('/plot?'+q,{method:'POST',body:svg})).json();
+  if(res.error){toast('Error: '+res.error);return;}
+  toast('Plotting…');pollPlot();
+};
+pollPlot(); // reflect any in-flight job on page load
+$('copy').onclick=()=>{navigator.clipboard?.writeText(JSON.stringify(
+  {gen:state.gen,seed:state.seed,paper:state.paper,orient:state.orient,margin:state.margin,
+   palette:PALETTES[state.paletteI].name,params:state.params},null,2));toast('Parameters copied');};
+window.addEventListener('resize',()=>render());
+
+buildGens();buildParams();buildPalettes();maskInit();generate();
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+# Polargraph machine profile — the recorded, reproducible calibration.
+# Values are starting estimates; the **calibrated** ones get filled in at M2-M4.
+# (Success criterion: a build is reproducible from this file. See ARCHITECTURE.md §5.)
+
+[geometry]
+motor_spacing_mm = 318.0   # D — pulley center-to-center, measured on the built frame. Refine via calibration plot.
+# Frame: left anchor (0,0), right anchor (D,0), y positive downward.
+
+[steppers]
+pulley_teeth = 16          # CONFIRMED 16T on the built machine -> 100 steps/mm
+microsteps = 16            # A4988 jumpered to 1/16
+motor_full_steps_per_rev = 200   # 1.8° NEMA17
+belt_pitch_mm = 2.0        # GT2
+# steps_per_mm (belt) = 1600 / pulley_teeth  ->  20T = 80, 16T = 100
+
+[motion]
+draw_feed_mm_min = 800.0     # pen-down drawing speed; tune for clean lines
+travel_feed_mm_min = 2500.0  # pen-up rapid speed
+max_rate_mm_min = 2000.0   # conservative for the ~120 g gondola; raise once smooth
+acceleration_mm_s2 = 50.0  # gentle — sag/sway control
+segment_length_mm = 1.0    # IK spike: worst-case belt-bow ~1.3 um here vs ~200 um pen line. See ARCHITECTURE.md S6.
+
+[gondola]
+mount_spacing_mm = 80.0   # belt attachment points, measured
+pen_drop_mm = 27.0        # pen tip below the mount line, measured
+# Level-hang model: equivalent to point-IK with D-80 and a (40,27) pen offset.
+
+[pen]
+# SG90 via grblHAL spindle PWM (GP15), $33=50Hz, $35/$36 = 1-2ms window.
+# Set on the real machine: S350 = pen on paper, S650 = lifted clear.
+up_s = 850                 # max quiet throw on current linkage (S1000 buzzes; lift is marginal - see gravity-holder upgrade)
+down_s = 350
+settle_ms = 150            # pause after pen moves - blob-free starts
+
+[paper]
+top_offset_mm = 85.0         # measured: pulley line down to the paper's top edge
+# origin_x_mm defaults to centered between the anchors: (D - width) / 2
+width_mm = 210.0           # A4 portrait
+height_mm = 297.0
+
+[draw_area]
+# The frame aperture (~30 x 41 cm). Pen must stay inside this.
+width_mm = 300.0
+height_mm = 410.0
+# Paper origin/placement within the draw area is set at calibration (manual home, v1).

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 210 297">
+  <!-- a small 40 mm square near the paper centre - a quick, gentle stream test -->
+  <g stroke="#111111" fill="none">
+    <polygon points="85,128 125,128 125,168 85,168"/>
+  </g>
+</svg>

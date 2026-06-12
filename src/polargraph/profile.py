@@ -1,0 +1,83 @@
+"""Load the machine profile (profiles/machine.toml) into a typed object.
+
+Tolerant of missing keys (uses sane defaults) and of the older field names, so it
+keeps working as the profile evolves. tomllib is stdlib (Python 3.11+).
+"""
+
+from __future__ import annotations
+
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+
+from .geometry import GondolaGeometry, MachineGeometry, steps_per_mm
+
+PACKAGED_DEFAULT = Path(__file__).resolve().parent / "data" / "machine.toml"
+
+
+def resolve_profile(path: str | Path | None = None) -> Path:
+    """Profile search order: explicit > ./profiles/machine.toml > ~/.polargraph/ > packaged default."""
+    if path:
+        return Path(path)
+    for cand in (Path("profiles/machine.toml"),
+                 Path.home() / ".polargraph" / "machine.toml"):
+        if cand.exists():
+            return cand
+    return PACKAGED_DEFAULT
+
+
+@dataclass(frozen=True)
+class Profile:
+    geometry: MachineGeometry | GondolaGeometry
+    belt_steps_per_mm: float
+    segment_length_mm: float
+    draw_feed_mm_min: float
+    travel_feed_mm_min: float
+    pen_up_s: float
+    pen_down_s: float
+    pen_settle_ms: float
+    paper_w_mm: float
+    paper_h_mm: float
+    paper_origin_mm: tuple[float, float]  # machine coords of the paper's top-left
+
+    @classmethod
+    def load(cls, path: str | Path | None = None) -> "Profile":
+        data = tomllib.loads(resolve_profile(path).read_text(encoding="utf-8"))
+        geo = data.get("geometry", {})
+        st = data.get("steppers", {})
+        mo = data.get("motion", {})
+        pen = data.get("pen", {})
+        pa = data.get("paper", {})
+        gon = data.get("gondola", {})
+
+        D = float(geo.get("motor_spacing_mm", 400.0))
+        mount = float(gon.get("mount_spacing_mm", 0.0))
+        drop = float(gon.get("pen_drop_mm", 0.0))
+        geometry = (GondolaGeometry(D, mount, drop) if (mount or drop)
+                    else MachineGeometry(D))
+        spm = steps_per_mm(
+            int(st.get("pulley_teeth", 20)),
+            int(st.get("microsteps", 16)),
+            int(st.get("motor_full_steps_per_rev", 200)),
+            float(st.get("belt_pitch_mm", 2.0)),
+        )
+        paper_w = float(pa.get("width_mm", 210.0))
+        paper_h = float(pa.get("height_mm", 297.0))
+        ox = pa.get("origin_x_mm")
+        ox = (D - paper_w) / 2.0 if ox is None else float(ox)  # default: centered
+        oy = float(pa.get("top_offset_mm", 120.0))
+
+        return cls(
+            geometry=geometry,
+            belt_steps_per_mm=spm,
+            segment_length_mm=float(mo.get("segment_length_mm", 1.0)),
+            draw_feed_mm_min=float(mo.get("draw_feed_mm_min", 800.0)),
+            travel_feed_mm_min=float(mo.get("travel_feed_mm_min", 2500.0)),
+            # accept new (up_s/down_s/settle_ms) or old (servo_up/.../dwell_*) names
+            pen_up_s=float(pen.get("up_s", pen.get("servo_up", 350))),
+            pen_down_s=float(pen.get("down_s", pen.get("servo_down", 600))),
+            pen_settle_ms=float(pen.get("settle_ms", pen.get("dwell_after_down_ms", 150))),
+            paper_w_mm=paper_w,
+            paper_h_mm=paper_h,
+            paper_origin_mm=(ox, oy),
+        )
