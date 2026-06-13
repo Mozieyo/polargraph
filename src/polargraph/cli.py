@@ -61,9 +61,9 @@ def _compare_svg(path, layers, recon, profile):
         f.write("\n".join(out) + "\n")
 
 
-def _load_lines(path, profile):
+def _load_lines(path, profile, ignore_limits=False):
     if path.lower().endswith(".svg"):
-        lines, _ = gc.generate(read_svg(path), profile)
+        lines, _ = gc.generate(read_svg(path), profile, ignore_limits=ignore_limits)
         return lines
     with open(path, encoding="utf-8") as f:
         return f.read().splitlines()
@@ -72,7 +72,8 @@ def _load_lines(path, profile):
 def cmd_gcode(a):
     prof = Profile.load(a.profile)
     layers = read_svg(a.svg)
-    lines, stats = gc.generate(layers, prof, optimize=not a.no_optimize)
+    lines, stats = gc.generate(layers, prof, optimize=not a.no_optimize,
+                               ignore_limits=a.ignore_limits)
     out = a.out or os.path.splitext(a.svg)[0] + ".gcode"
     with open(out, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
@@ -97,7 +98,7 @@ def cmd_verify(a):
 
 def cmd_stream(a):
     prof = Profile.load(a.profile)
-    lines = _load_lines(a.input, prof)
+    lines = _load_lines(a.input, prof, ignore_limits=a.ignore_limits)
     pre = []
     if not a.no_unlock:
         pre.append("$X")
@@ -144,6 +145,8 @@ def main(argv=None):
                         help="machine profile (default: ./profiles/machine.toml > ~/.polargraph > packaged)")
         if name == "gcode":
             sp.add_argument("--no-optimize", action="store_true", help="skip travel reordering")
+            sp.add_argument("--ignore-limits", action="store_true",
+                            help="bypass the safe-workspace (slack-belt) check")
         sp.set_defaults(func=fn)
 
     sp = sub.add_parser("stream", help="stream a .svg or .gcode to the machine")
@@ -153,6 +156,8 @@ def main(argv=None):
     sp.add_argument("--profile", default=None)
     sp.add_argument("--no-g92", action="store_true", help="don't set position (assume already homed)")
     sp.add_argument("--no-unlock", action="store_true", help="don't send $X first")
+    sp.add_argument("--ignore-limits", action="store_true",
+                    help="bypass the safe-workspace (slack-belt) check")
     sp.set_defaults(func=cmd_stream)
 
     sp = sub.add_parser("serve", help="serve the Studio frontend with a PLOT button")

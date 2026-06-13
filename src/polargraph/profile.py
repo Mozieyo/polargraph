@@ -39,6 +39,8 @@ class Profile:
     paper_w_mm: float
     paper_h_mm: float
     paper_origin_mm: tuple[float, float]  # machine coords of the paper's top-left
+    # safe workspace box in machine coords (slack-belt guard); None = unchecked
+    safe_box: tuple[float, float, float, float] | None  # (x_min, y_min, x_max, y_max)
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> "Profile":
@@ -49,6 +51,7 @@ class Profile:
         pen = data.get("pen", {})
         pa = data.get("paper", {})
         gon = data.get("gondola", {})
+        lim = data.get("limits", {})
 
         D = float(geo.get("motor_spacing_mm", 400.0))
         mount = float(gon.get("mount_spacing_mm", 0.0))
@@ -67,6 +70,16 @@ class Profile:
         ox = (D - paper_w) / 2.0 if ox is None else float(ox)  # default: centered
         oy = float(pa.get("top_offset_mm", 120.0))
 
+        # servo safety: clamp pen positions into [min_s, max_s] (runaway protection)
+        s_lo = float(pen.get("min_s", 0))
+        s_hi = float(pen.get("max_s", 1000))
+        clamp_s = lambda v: min(max(float(v), s_lo), s_hi)  # noqa: E731
+
+        safe = None
+        if lim:
+            safe = (float(lim.get("safe_x_min", -1e9)), float(lim.get("safe_y_min", -1e9)),
+                    float(lim.get("safe_x_max", 1e9)), float(lim.get("safe_y_max", 1e9)))
+
         return cls(
             geometry=geometry,
             belt_steps_per_mm=spm,
@@ -74,10 +87,11 @@ class Profile:
             draw_feed_mm_min=float(mo.get("draw_feed_mm_min", 800.0)),
             travel_feed_mm_min=float(mo.get("travel_feed_mm_min", 2500.0)),
             # accept new (up_s/down_s/settle_ms) or old (servo_up/.../dwell_*) names
-            pen_up_s=float(pen.get("up_s", pen.get("servo_up", 350))),
-            pen_down_s=float(pen.get("down_s", pen.get("servo_down", 600))),
+            pen_up_s=clamp_s(pen.get("up_s", pen.get("servo_up", 350))),
+            pen_down_s=clamp_s(pen.get("down_s", pen.get("servo_down", 600))),
             pen_settle_ms=float(pen.get("settle_ms", pen.get("dwell_after_down_ms", 150))),
             paper_w_mm=paper_w,
             paper_h_mm=paper_h,
             paper_origin_mm=(ox, oy),
+            safe_box=safe,
         )

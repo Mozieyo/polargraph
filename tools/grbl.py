@@ -43,12 +43,14 @@ def cmd_list():
 
 
 def autodetect():
-    out = []
+    pico, loose = [], []
     for p in list_ports.comports():
         s = (str(p.description) + " " + str(p.hwid)).lower()
-        if any(k in s for k in ("rp2040", "pico", "grbl", "usb serial", "cdc", "2e8a")):
-            out.append(p.device)
-    return out
+        if "2e8a" in s:  # Raspberry Pi USB VID - the RP2040 itself
+            pico.append(p.device)
+        elif any(k in s for k in ("rp2040", "pico", "grbl", "usb serial", "cdc")):
+            loose.append(p.device)
+    return pico if pico else loose
 
 
 def send_line(ser, line, settle):

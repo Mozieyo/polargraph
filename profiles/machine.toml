@@ -21,15 +21,31 @@ acceleration_mm_s2 = 50.0  # gentle — sag/sway control
 segment_length_mm = 1.0    # IK spike: worst-case belt-bow ~1.3 um here vs ~200 um pen line. See ARCHITECTURE.md S6.
 
 [gondola]
-mount_spacing_mm = 80.0   # belt attachment points, measured
-pen_drop_mm = 27.0        # pen tip below the mount line, measured
-# Level-hang model: equivalent to point-IK with D-80 and a (40,27) pen offset.
+mount_spacing_mm = 0.0    # gondola v2: belts mount AT the pen tip -> pure point model
+pen_drop_mm = 0.0
+
+[limits]
+# Slack-belt danger zone: near the sides the far belt loses tension and can skip.
+# Safe box in machine coords (mm from left anchor / down from anchor line). Tune!
+safe_x_min = 50.0         # "side 5cm" - within 5cm of a side, the other belt slips
+safe_x_max = 268.0        # D - 50
+safe_y_min = 55.0         # too high = both belts near-horizontal, weak control
+safe_y_max = 385.0        # bottom of travel - counterweight endstop bottoms out
 
 [pen]
-# SG90 via grblHAL spindle PWM (GP15), $33=50Hz, $35/$36 = 1-2ms window.
-# Set on the real machine: S350 = pen on paper, S650 = lifted clear.
-up_s = 850                 # max quiet throw on current linkage (S1000 buzzes; lift is marginal - see gravity-holder upgrade)
-down_s = 350
+# SG90 via grblHAL spindle PWM (GP15), $33=50Hz.
+# COLD-BOOT GOTCHA: $33 only re-clocks the PWM on a power-cycle (not soft-reset or a
+# live write). Skip the cold boot and you get a ~10deg nudge + overheat as the servo
+# chases an out-of-range pulse. See memory: rp2040-grblhal-pwm-coldboot.
+# RANGE PROTECTION: $35=5 / $36=10 -> 1.0-2.0ms pulse window (S0=1.0ms, S1000=2.0ms).
+# CALIBRATED for the spring push-pull linkage (gondola v2), 2026-06-13:
+#   down S50  (~1.05ms) presses a clean line, runs only warm.
+#   up   S600 (~1.60ms) lifts ~3-5mm clear; mid-range hold stays cool.
+#   S900+ sat near the throw end -> hunting + overheat; max_s caps well below it.
+up_s = 600
+down_s = 50
+min_s = 50                 # software clamp floor (firmware window also guards)
+max_s = 750                # cap below the S900 hot/hunting zone
 settle_ms = 150            # pause after pen moves - blob-free starts
 
 [paper]

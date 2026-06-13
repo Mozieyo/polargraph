@@ -28,9 +28,14 @@ def find_port(explicit=None):
         return explicit
     if serial is None:
         return None
-    cands = [p.device for p in list_ports.comports()
-             if any(k in (str(p.description) + " " + str(p.hwid)).lower()
-                    for k in ("2e8a", "pico", "rp2040", "usb serial", "cdc"))]
+    pico, loose = [], []
+    for p in list_ports.comports():
+        s = (str(p.description) + " " + str(p.hwid)).lower()
+        if "2e8a" in s:  # Raspberry Pi USB VID - the RP2040 itself
+            pico.append(p.device)
+        elif any(k in s for k in ("pico", "rp2040", "usb serial", "cdc")):
+            loose.append(p.device)
+    cands = pico if pico else loose
     return cands[0] if len(cands) == 1 else None
 
 

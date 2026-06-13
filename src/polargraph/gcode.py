@@ -50,11 +50,25 @@ def _pen(lines: list[str], s: float, settle_ms: float) -> None:
     lines.append(f"G4 P{settle_ms / 1000.0:.3f}")
 
 
-def generate(layers: list[dict], profile: Profile, optimize: bool = True):
-    """Return ``(gcode_lines, stats)``."""
+def generate(layers: list[dict], profile: Profile, optimize: bool = True,
+             ignore_limits: bool = False):
+    """Return ``(gcode_lines, stats)``.
+
+    Raises ``ValueError`` if any point leaves the profile's safe box (the
+    slack-belt danger zone near the workspace sides), unless ``ignore_limits``.
+    """
     geo = profile.geometry
     ox, oy = profile.paper_origin_mm
     seg = profile.segment_length_mm
+
+    box = None if ignore_limits else profile.safe_box
+    viol = [0, 1e9, -1e9, 1e9, -1e9]  # count, x_min, x_max, y_min, y_max seen
+
+    def check(x, y):
+        if box and not (box[0] <= x <= box[2] and box[1] <= y <= box[3]):
+            viol[0] += 1
+            viol[1] = min(viol[1], x); viol[2] = max(viol[2], x)
+            viol[3] = min(viol[3], y); viol[4] = max(viol[4], y)
 
     L: list[str] = [
         "; PolarGraph G-code  (axes: X = left belt L1, Y = right belt L2, mm)",
@@ -81,6 +95,8 @@ def generate(layers: list[dict], profile: Profile, optimize: bool = True):
             pts = segment_polyline(poly, seg)
             if len(pts) < 2:
                 continue
+            for p in pts:
+                check(*p)
             if last is not None:
                 travel_mm += _dist(last, pts[0])
             l1, l2 = geo.ik(*pts[0])
@@ -99,6 +115,13 @@ def generate(layers: list[dict], profile: Profile, optimize: bool = True):
                 prev, pl1, pl2 = p, cl1, cl2
             _pen(L, profile.pen_up_s, profile.pen_settle_ms)
             last = pts[-1]
+
+    if viol[0]:
+        raise ValueError(
+            f"toolpath leaves the safe workspace ({viol[0]} points, "
+            f"x {viol[1]:.0f}..{viol[2]:.0f}, y {viol[3]:.0f}..{viol[4]:.0f} mm vs "
+            f"safe x {box[0]:.0f}..{box[2]:.0f}, y {box[1]:.0f}..{box[3]:.0f}) - "
+            "slack-belt danger zone; shrink/move the art or pass --ignore-limits")
 
     L.append("; end")
     est_min = (draw_mm / profile.draw_feed_mm_min

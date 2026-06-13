@@ -36,11 +36,14 @@ BAUD = 115200
 def find_port(explicit=None):
     if explicit:
         return explicit
-    cands = []
+    pico, loose = [], []
     for p in list_ports.comports():
         s = (str(p.description) + " " + str(p.hwid)).lower()
-        if any(k in s for k in ("2e8a", "rp2040", "pico", "usb serial", "cdc")):
-            cands.append(p.device)
+        if "2e8a" in s:  # Raspberry Pi USB VID - the RP2040 itself
+            pico.append(p.device)
+        elif any(k in s for k in ("rp2040", "pico", "usb serial", "cdc")):
+            loose.append(p.device)
+    cands = pico if pico else loose
     if len(cands) == 1:
         return cands[0]
     if not cands:
