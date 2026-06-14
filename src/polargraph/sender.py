@@ -194,14 +194,28 @@ def home(ser, profile, on_log=None, on_status=None, should_abort=None):
 
 
 def disable_steppers(ser, on_log=None):
-    """Release the servo and de-energize the stepper drivers (EN off) via $SLP sleep.
-    The next session must wake() the board (soft reset) to bring drivers back."""
+    """Release the servo and de-energize the stepper drivers.
+
+    1. M5   — release servo (stops PWM)
+    2. $1=0 — set idle-disable timeout to zero so steppers cut off immediately
+    3. M84  — explicit stepper-disable (grblHAL supports this)
+    4. $SLP — put controller to sleep (belt-and-suspenders)
+
+    The next session must wake() the board (soft reset) to bring drivers back.
+
+    NOTE: If the A4988 EN pin is tied to GND (per the bench-test wiring in
+    firmware/bring-up.md §1), software cannot disable the steppers. Move EN→GP8
+    on the Pico, and set $4=1 (active-LOW enable is typical for A4988 boards).
+    """
     _send_and_wait(ser, "M5")
+    _send_and_wait(ser, "$1=0")
+    _send_and_wait(ser, "M84")
     ser.write(b"$SLP\n")
     ser.flush()
     time.sleep(0.3)
     if on_log:
-        on_log("# steppers disabled, servo released ($SLP)")
+        on_log("# steppers disabled (M5 + $1=0 + M84 + $SLP)")
+        on_log("# if motors still hold, check: A4988 EN -> GP8, grbl $4 polarity")
 
 
 def _run(ser, prog, preamble=None, rx_buffer=RX_BUFFER, status_every=1.0,
