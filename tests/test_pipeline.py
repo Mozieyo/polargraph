@@ -51,7 +51,8 @@ def test_gcode_fidelity() -> None:
     diag = [(20, 20), (190, 277)]
     layers = [{"stroke": "#000", "polylines": [square, diag]}]
 
-    lines, stats = gc.generate(layers, prof)
+    # ignore_limits: this checks IK fidelity, not the (machine-specific) safe box/warp
+    lines, stats = gc.generate(layers, prof, ignore_limits=True)
     assert stats["segments"] > 0
 
     # the G-code's belt coords (rounded to 3dp) must reconstruct the drawing to sub-pen-width

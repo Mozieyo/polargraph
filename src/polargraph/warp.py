@@ -79,7 +79,7 @@ def _grid_centers(paper_w, paper_h, extent_mm, cell_mm):
 
 
 def fit_from_scan(pdf_path, paper_w, paper_h, extent_mm=200.0, cell_mm=10.0,
-                  dpi=120, step=5.0, smoothing=1.0):
+                  dpi=120, step=5.0, smoothing=1.0, edge_trim=12.0):
     """Detect grid cells in the scan, fit a TPS (observed -> commanded), and bake it
     into a displacement lattice. Returns ``(Warp, stats_dict)``. Needs numpy/scipy/fitz.
     """
@@ -120,6 +120,15 @@ def fit_from_scan(pdf_path, paper_w, paper_h, extent_mm=200.0, cell_mm=10.0,
             src.append(obs[m])
             tgt.append(ideal[k])
     src, tgt = np.array(src), np.array(tgt)
+    # drop the outermost ring of cells: edge detection is least reliable there and a
+    # thin-plate spline develops wild gradients near the data boundary (it was
+    # over-compressing the bottom rows). The lattice extrapolates smoothly past the trim.
+    if edge_trim > 0 and len(tgt) > 12:
+        lo, hi = tgt.min(0) + edge_trim, tgt.max(0) - edge_trim
+        keepm = ((tgt[:, 0] >= lo[0]) & (tgt[:, 0] <= hi[0])
+                 & (tgt[:, 1] >= lo[1]) & (tgt[:, 1] <= hi[1]))
+        if keepm.sum() >= 12:
+            src, tgt = src[keepm], tgt[keepm]
     if len(src) < 12:
         raise ValueError(f"only matched {len(src)} grid cells - check the scan/grid size")
 

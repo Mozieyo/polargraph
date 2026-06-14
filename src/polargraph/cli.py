@@ -215,7 +215,8 @@ def cmd_warp_fit(a):
     try:
         w, st = warpmod.fit_from_scan(a.scan, prof.paper_w_mm, prof.paper_h_mm,
                                       extent_mm=a.extent, cell_mm=a.cell, dpi=a.dpi,
-                                      step=a.step, smoothing=a.smoothing)
+                                      step=a.step, smoothing=a.smoothing,
+                                      edge_trim=a.edge_trim)
     except ImportError as e:
         raise SystemExit(f"warp-fit needs numpy, scipy and pymupdf: pip install numpy scipy pymupdf ({e})")
     except Exception as e:  # noqa: BLE001
@@ -298,6 +299,8 @@ def main(argv=None):
     sp.add_argument("--step", type=float, default=5.0, help="displacement lattice step mm")
     sp.add_argument("--smoothing", type=float, default=1.0,
                     help="TPS smoothing - raise to ignore friction jitter")
+    sp.add_argument("--edge-trim", type=float, default=12.0,
+                    help="drop control cells within this mm of the grid edge (tames TPS edge artifacts)")
     sp.add_argument("-o", "--out", help="output warp.json (default: beside the profile)")
     sp.add_argument("--profile", default=None)
     sp.set_defaults(func=cmd_warp_fit)
