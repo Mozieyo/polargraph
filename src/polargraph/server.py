@@ -250,6 +250,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._home()
         if self.path.startswith("/motors"):
             return self._motors()
+        if self.path.startswith("/safepoweroff"):
+            return self._safepoweroff()
         if self.path.startswith("/console"):
             return self._console(body)
         if self.path.startswith("/plot"):
@@ -276,6 +278,26 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001
             return self._json(400, {"error": str(e)})
         return self._json(200, {"ok": True, "motors": JOB["motors"]})
+
+    def _safepoweroff(self):
+        """De-energize steppers and release servo so it's safe to disconnect power.
+        This is a one-way off switch (not a toggle) — use /motors to wake back up."""
+        if _busy():
+            return self._json(409, {"error": "machine busy"})
+        try:
+            with _SERIAL_LOCK:
+                ser, port = sender.open_port(SERIAL["port"])
+                JOB["port"] = port
+                try:
+                    sender.disable_steppers(ser, on_log=_logline)
+                    JOB["motors"] = False
+                finally:
+                    ser.close()
+        except Exception as e:  # noqa: BLE001
+            return self._json(400, {"error": str(e)})
+        _logline("# safe to disconnect power — Pico & A4988s de-energized")
+        return self._json(200, {"ok": True, "motors": False,
+                                "message": "Safe to power off. Steppers released, servo off."})
 
     def _home(self):
         with _LOCK:
