@@ -292,7 +292,7 @@ def main(argv=None):
                         help="fit a TPS distortion correction from a scanned calibration grid")
     sp.add_argument("--scan", required=True,
                     help="PDF/image of the plotted grid, cropped edge-to-edge to the paper")
-    sp.add_argument("--extent", type=float, default=200.0, help="grid extent mm (match calib --square)")
+    sp.add_argument("--extent", type=float, default=150.0, help="grid extent mm (match calib --square)")
     sp.add_argument("--cell", type=float, default=10.0, help="grid cell mm (match calib --cell)")
     sp.add_argument("--dpi", type=int, default=120, help="raster dpi for cell detection")
     sp.add_argument("--step", type=float, default=5.0, help="displacement lattice step mm")

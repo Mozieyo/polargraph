@@ -15,12 +15,12 @@ A square + a measurement is enough to solve both.
 
 It will:
 
-1. Generate a **20 × 20 cm grid of 1 cm squares**.
+1. Generate a **15 × 15 cm grid of 1 cm squares** (sized to fit the reachable area).
 2. **Home** the machine to the endstops, then plot the grid.
 3. Ask for the **measured width and height** of the outer border (ruler, outer edges).
 4. Print the corrected `motor_spacing_mm` and `$100`/`$101`.
 
-> The grid homes first, so it lands at a known spot. The **outer border** (200 mm) gives
+> The grid homes first, so it lands at a known spot. The **outer border** (150 mm) gives
 > the size/aspect fix; the **inner 1 cm cells** reveal *local* warp — if cells stretch or
 > skew unevenly across the sheet, photograph it and we map the distortion field for a
 > per-region geometric correction (beyond the single motor-spacing/steps fix).
@@ -48,10 +48,10 @@ usually nails it.
 ## Manual (no double-click)
 
 ```
-python -m polargraph calib --grid --square 200 --cell 10 --out calibration.svg
+python -m polargraph calib --grid --square 150 --cell 10 --out calibration.svg
 python -m polargraph stream calibration.svg --auto-home   # home, then plot
 # measure the outer border W and H, then:
-python -m polargraph calib-solve --commanded 200 200 --measured <W> <H>
+python -m polargraph calib-solve --commanded 150 150 --measured <W> <H>
 ```
 
 (Set `PYTHONPATH=src` first if running from the repo, like the launchers do.)
@@ -62,7 +62,7 @@ If lines come out *bowed* (not just the wrong size) — motor_spacing is right b
 grid plots as a curved mesh — that's a nonlinear warp (belt sag, gondola geometry). A
 single number can't fix it; we measure the whole distortion field and invert it.
 
-1. Plot the grid: `polargraph calib --grid --square 200 --cell 10` → `stream --auto-home`.
+1. Plot the grid: `polargraph calib --grid --square 150 --cell 10` → `stream --auto-home`.
 2. **Scan it edge-to-edge, cropped to the A4 sheet** (PDF or image).
 3. Fit the correction:
    ```
