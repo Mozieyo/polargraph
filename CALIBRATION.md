@@ -56,6 +56,31 @@ python -m polargraph calib-solve --commanded 200 200 --measured <W> <H>
 
 (Set `PYTHONPATH=src` first if running from the repo, like the launchers do.)
 
+## Warp correction (curved distortion) — thin-plate spline
+
+If lines come out *bowed* (not just the wrong size) — motor_spacing is right but a 1 cm
+grid plots as a curved mesh — that's a nonlinear warp (belt sag, gondola geometry). A
+single number can't fix it; we measure the whole distortion field and invert it.
+
+1. Plot the grid: `polargraph calib --grid --square 200 --cell 10` → `stream --auto-home`.
+2. **Scan it edge-to-edge, cropped to the A4 sheet** (PDF or image).
+3. Fit the correction:
+   ```
+   pip install numpy scipy pymupdf          # one-time, for fitting only
+   python -m polargraph warp-fit --scan path\to\grid.pdf
+   ```
+   It detects every grid cell, fits a thin-plate spline mapping where ink *landed* back
+   to where it was *commanded*, and writes `profiles/warp.json`. From then on **every
+   plot is pre-warped** so it lands true. `polargraph warp-clear` turns it off.
+
+Notes:
+- Fitting needs numpy/scipy/pymupdf; **plotting needs nothing extra** — the spline is
+  baked into a displacement lattice and applied with the stdlib.
+- The warp compensates by commanding the gondola *wider* near the edges. If that pushes
+  past the reachable area (it hits the side end-switch / slack-belt zone), the safe-box
+  guard stops the job — keep art within the margins, or the warp can't fully reach the
+  far corners. This is why a generous margin matters once a warp is active.
+
 ## Why a square works
 
 `motor_spacing` mostly skews the **aspect** (width ÷ height); steps/mm scales the

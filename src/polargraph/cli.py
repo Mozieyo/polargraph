@@ -15,6 +15,7 @@ import argparse
 import math
 import os
 import re
+from pathlib import Path
 
 from . import gcode as gc
 from . import patterns
@@ -207,6 +208,38 @@ def cmd_calib_solve(a):
         print("  (size was already accurate; only the aspect/motor_spacing needed fixing)")
 
 
+def cmd_warp_fit(a):
+    from . import warp as warpmod
+    from .profile import resolve_profile
+    prof = Profile.load(a.profile)
+    try:
+        w, st = warpmod.fit_from_scan(a.scan, prof.paper_w_mm, prof.paper_h_mm,
+                                      extent_mm=a.extent, cell_mm=a.cell, dpi=a.dpi,
+                                      step=a.step, smoothing=a.smoothing)
+    except ImportError as e:
+        raise SystemExit(f"warp-fit needs numpy, scipy and pymupdf: pip install numpy scipy pymupdf ({e})")
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(f"warp fit failed: {e}")
+    out = Path(a.out) if a.out else resolve_profile(a.profile).parent / "warp.json"
+    out.write_text(w.to_json())
+    print(f"fit {st['cells']} grid cells")
+    print(f"  raw warp:     mean {st['warp_mean_mm']:.1f} mm, max {st['warp_max_mm']:.1f} mm")
+    print(f"  TPS residual: mean {st['resid_mm']:.2f} mm, max {st['resid_max_mm']:.2f} mm")
+    print(f"  wrote {out}  ({w.nx}x{w.ny} lattice @ {w.step:.0f}mm)")
+    print("  warp is now ACTIVE for plots from this profile. Re-plot the grid to verify;")
+    print("  run 'polargraph warp-clear' to remove it.")
+
+
+def cmd_warp_clear(a):
+    from .profile import resolve_profile
+    p = resolve_profile(a.profile).parent / "warp.json"
+    if p.exists():
+        p.unlink()
+        print(f"removed {p}  (warp correction off)")
+    else:
+        print("no warp.json found - nothing to clear")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="polargraph",
                                  description="SVG -> belt-length G-code for the polargraph")
@@ -254,6 +287,24 @@ def main(argv=None):
     sp.add_argument("--cell", type=float, default=10.0, help="grid cell size in mm (with --grid)")
     sp.add_argument("--profile", default=None)
     sp.set_defaults(func=cmd_calib)
+
+    sp = sub.add_parser("warp-fit",
+                        help="fit a TPS distortion correction from a scanned calibration grid")
+    sp.add_argument("--scan", required=True,
+                    help="PDF/image of the plotted grid, cropped edge-to-edge to the paper")
+    sp.add_argument("--extent", type=float, default=200.0, help="grid extent mm (match calib --square)")
+    sp.add_argument("--cell", type=float, default=10.0, help="grid cell mm (match calib --cell)")
+    sp.add_argument("--dpi", type=int, default=120, help="raster dpi for cell detection")
+    sp.add_argument("--step", type=float, default=5.0, help="displacement lattice step mm")
+    sp.add_argument("--smoothing", type=float, default=1.0,
+                    help="TPS smoothing - raise to ignore friction jitter")
+    sp.add_argument("-o", "--out", help="output warp.json (default: beside the profile)")
+    sp.add_argument("--profile", default=None)
+    sp.set_defaults(func=cmd_warp_fit)
+
+    sp = sub.add_parser("warp-clear", help="remove the active warp correction (warp.json)")
+    sp.add_argument("--profile", default=None)
+    sp.set_defaults(func=cmd_warp_clear)
 
     sp = sub.add_parser("calib-solve",
                         help="solve motor_spacing + steps/mm from a measured plotted rectangle")

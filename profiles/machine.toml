@@ -27,9 +27,9 @@ pen_drop_mm = 0.0
 [limits]
 # Slack-belt danger zone: near the sides the far belt loses tension and can skip.
 # Safe box in machine coords (mm from left anchor / down from anchor line). Tune!
-safe_x_min = 50.0         # "side 5cm" - within 5cm of a side, the other belt slips
-safe_x_max = 268.0        # D - 50
-safe_y_min = 55.0         # too high = both belts near-horizontal, weak control
+safe_x_min = 60.0         # no-go within 60mm of the left pulley line (gondola design)
+safe_x_max = 258.0        # D - 60  (no-go within 60mm of the right pulley)
+safe_y_min = 100.0        # no-go within 100mm below the pulley line (gondola design)
 safe_y_max = 385.0        # bottom of travel - counterweight endstop bottoms out
 
 [homing]

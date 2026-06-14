@@ -114,6 +114,7 @@ def generate(layers: list[dict], profile: Profile, optimize: bool = True,
     geo = profile.geometry
     ox, oy = profile.paper_origin_mm
     seg = profile.segment_length_mm
+    warp = profile.warp  # TPS distortion pre-correction (paper coords), or None
 
     box = None if ignore_limits else profile.safe_box
     viol = [0, 1e9, -1e9, 1e9, -1e9]  # count, x_min, x_max, y_min, y_max seen
@@ -153,6 +154,9 @@ def generate(layers: list[dict], profile: Profile, optimize: bool = True,
             pts = segment_polyline(poly, seg)
             if len(pts) < 2:
                 continue
+            if warp:  # pre-warp each command point (paper coords) so output lands true
+                pts = [(ox + wx, oy + wy) for wx, wy in
+                       (warp.apply(p[0] - ox, p[1] - oy) for p in pts)]
             for p in pts:
                 check(*p)
             if last is not None:

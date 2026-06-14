@@ -46,6 +46,13 @@
     border-radius:7px;cursor:pointer;transition:.12s}
   .gens button:hover{color:var(--ink);border-color:#39404a}
   .gens button.on{background:#23262d;color:var(--accent);border-color:var(--accent)}
+  /* segmented control for discrete (enum) parameters */
+  .seg{display:flex;flex-wrap:wrap;gap:4px}
+  .seg button{flex:1 1 auto;min-width:0;padding:6px 7px;background:var(--panel2);color:var(--dim);
+    border:1px solid var(--line);border-radius:6px;cursor:pointer;font-family:var(--mono);
+    font-size:10.5px;transition:.12s;white-space:nowrap}
+  .seg button:hover{color:var(--ink);border-color:#39404a}
+  .seg button.on{background:#23262d;color:var(--accent);border-color:var(--accent)}
   /* control rows */
   .row{margin:11px 0}
   .row .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
@@ -402,6 +409,10 @@ function shapePoly(kind,x,y,s){
   if(kind===3){const r=s*1.15;return[[[x,y-r],[x+r*.87,y+r*.5],[x-r*.87,y+r*.5],[x,y-r]]];}         // triangle
   if(kind===4)return[[[x,y-s],[x+s,y],[x,y+s],[x-s,y],[x,y-s]]];                                     // diamond
   if(kind===5)return[[[x-s,y],[x+s,y]],[[x,y-s],[x,y+s]]];                                           // cross
+  if(kind===6){const p=[];for(let k=0;k<=24;k++){const a=k/24*TAU;                                   // heart
+    const hx=16*Math.pow(Math.sin(a),3);
+    const hy=-(13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a));
+    p.push([x+hx*s/16,y+hy*s/16]);}return[p];}
   return[[[x-s*.35,y],[x+s*.35,y]]];                                                                 // dot
 }
 
@@ -668,15 +679,18 @@ GEN.image={key:'image',label:'Image → art',
     {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.2},
     {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
     {key:'density',label:'Density',min:1,max:5,step:.1,def:1.8},
-    {key:'jit',label:'Jitter',min:0,max:1,step:.05,def:.25},
-    {key:'angle',label:'Hatch angle',min:0,max:180,step:1,def:30},
-    {key:'levels',label:'Hatch tones',min:2,max:6,step:1,def:4},
-    {key:'glyph',label:'Dither glyph',min:0,max:3,step:1,def:3,enum:['dot','dash','cross','ramp']},
-    {key:'asciichars',label:'ASCII / glyph ramp (light→dark)',type:'text',def:' .:-=+*#%@'},
-    {key:'asciifont',label:'Glyph font',type:'font',def:'monospace'},
-    {key:'_fontfile',label:'Load font file (.ttf/.otf)',type:'file',kind:'font'},
-    {key:'shape',label:'Point shape',min:0,max:5,step:1,def:1,enum:['dot','circle','square','triangle','diamond','cross']},
-    {key:'flowlen',label:'Flow stroke',min:10,max:120,step:5,def:42},
+    {key:'jit',label:'Jitter',min:0,max:1,step:.05,def:.25,show:P=>[0,3,4,5].includes(P.mode)},
+    {key:'angle',label:'Hatch angle',min:0,max:180,step:1,def:30,show:P=>P.mode===1},
+    {key:'levels',label:'Hatch tones',min:2,max:6,step:1,def:4,show:P=>P.mode===1},
+    {key:'glyph',label:'Dither glyph',min:0,max:3,step:1,def:3,enum:['dot','dash','cross','ramp'],show:P=>P.mode===0},
+    {key:'asciichars',label:'ASCII ramp (light→dark)',type:'text',def:' .:-=+*#%@',show:P=>P.mode===3},
+    {key:'asciifont',label:'Glyph font',type:'font',def:'monospace',show:P=>P.mode===3},
+    {key:'_fontfile',label:'Load font file (.ttf/.otf)',type:'file',kind:'font',show:P=>P.mode===3},
+    {key:'shape',label:'Point shape',min:0,max:6,step:1,def:1,enum:['dot','circle','square','triangle','diamond','cross','heart'],show:P=>P.mode>=4},
+    {key:'psize',label:'Point size',min:.3,max:3,step:.1,def:1,show:P=>P.mode>=4},
+    {key:'accent',label:'Mix-in shape',min:0,max:7,step:1,def:0,enum:['none','dot','circle','square','triangle','diamond','cross','heart'],show:P=>P.mode>=4},
+    {key:'accentpct',label:'Mix-in %',min:0,max:100,step:1,def:0,show:P=>P.mode>=4&&P.accent>0},
+    {key:'flowlen',label:'Flow stroke',min:10,max:120,step:5,def:42,show:P=>P.mode===2},
   ],
   gen(c,P){const r=c.rect,rng=c.rng,out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
     if(!IMG.loaded)return out;
@@ -735,26 +749,28 @@ GEN.image={key:'image',label:'Image → art',
         const b=integ(sx,sy,-1).reverse(),f=integ(sx,sy,1),pts=b.concat(f.slice(1));
         if(pts.length>2)out[Math.min(c.pens-1,(toneAt(sx,sy,r,P)*c.pens)|0)].lines.push(pts);
       }
-    } else if(P.mode===4){ // circles: grid of perfect circles, radius scaled by local tone
-      const cell=Math.max(1.6,P.density*1.8),rmax=cell*0.52,seg=20;
+    } else if(P.mode===4){ // circles: regular grid of shapes, size scaled by local tone
+      const cell=Math.max(1.6,P.density*1.8),smax=cell*0.52;
       for(let y=r.y0+cell/2;y<=r.y1;y+=cell)
         for(let x=r.x0+cell/2;x<=r.x1;x+=cell){
           const gx=x+(rng()-.5)*cell*P.jit,gy=y+(rng()-.5)*cell*P.jit;
           const t=toneAt(gx,gy,r,P);if(t<=0.04)continue;
-          const rad=rmax*Math.sqrt(clamp(t,0,1));if(rad<0.15)continue; // area ∝ tone
-          const ring=[];for(let k=0;k<=seg;k++){const a=k/seg*TAU;ring.push([gx+Math.cos(a)*rad,gy+Math.sin(a)*rad]);}
-          out[c.pens>1?Math.min(c.pens-1,(t*c.pens)|0):0].lines.push(ring);
+          const s=smax*(P.psize||1)*Math.sqrt(clamp(t,0,1));if(s<0.15)continue; // area ∝ tone
+          const kind=(P.accent>0&&rng()*100<P.accentpct)?(P.accent-1):P.shape;  // mix-in
+          const pen=c.pens>1?Math.min(c.pens-1,(t*c.pens)|0):0;
+          for(const pl of shapePoly(kind,gx,gy,s))out[pen].lines.push(pl);
         }
-    } else { // points (mode 5): point cloud of basic shapes, denser & bigger where dark
+    } else { // points (mode 5): random stipple of shapes, denser & bigger where dark
       const spacing=Math.max(1.4,P.density*1.6),smax=spacing*0.55;
       const tries=Math.floor((r.x1-r.x0)*(r.y1-r.y0)/(spacing*spacing));
       for(let i=0;i<tries;i++){
         const x=r.x0+rng()*(r.x1-r.x0),y=r.y0+rng()*(r.y1-r.y0);
         const t=toneAt(x,y,r,P);if(t<=0.03)continue;
         if(rng()>t)continue;                       // rejection-sample by tone
-        const s=smax*(0.35+0.65*t);                // bigger where darker
+        const s=smax*(P.psize||1)*(0.35+0.65*t);   // bigger where darker, scaled by Point size
+        const kind=(P.accent>0&&rng()*100<P.accentpct)?(P.accent-1):P.shape;  // mix-in
         const pen=c.pens>1?Math.min(c.pens-1,(t*c.pens)|0):0;
-        for(const pl of shapePoly(P.shape,x,y,s))out[pen].lines.push(pl);
+        for(const pl of shapePoly(kind,x,y,s))out[pen].lines.push(pl);
       }
     }
     return out;}};
@@ -1138,6 +1154,7 @@ function buildGens(){const g=$('gens');g.innerHTML='';for(const k of ORDER){
 function buildParams(){const wrap=$('params');wrap.innerHTML='';
   const fmt=(d,v)=>d.enum?d.enum[v]:(Number.isInteger(d.step)?v:(+v).toFixed(d.step<.01?3:(d.step<1?2:0)));
   for(const d of GEN[state.gen].params){
+    if(d.show && !d.show(state.params))continue;   // per-mode visibility
     if(d.type==='file'){
       const row=document.createElement('div');row.className='row';
       const isFont=d.kind==='font', isSvg=d.kind==='svg';
@@ -1191,6 +1208,18 @@ function buildParams(){const wrap=$('params');wrap.innerHTML='';
       b.style.cssText='width:100%;margin:0 0 8px;padding:9px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;font-family:var(--mono);font-size:11px;cursor:pointer';
       b.onmouseenter=()=>b.style.borderColor='var(--accent)';b.onmouseleave=()=>b.style.borderColor='var(--line)';
       b.onclick=()=>makeSample();wrap.appendChild(b);continue;
+    }
+    if(d.enum){   // discrete choice -> segmented buttons (clearer than a slider)
+      const row=document.createElement('div');row.className='row';
+      row.innerHTML=`<div class="top"><span class="name">${d.label}</span></div>`;
+      const seg=document.createElement('div');seg.className='seg';
+      d.enum.forEach((lab,val)=>{
+        const b=document.createElement('button');b.textContent=lab;
+        if(val===state.params[d.key])b.className='on';
+        b.onclick=()=>{state.params[d.key]=val;buildParams();generate();};
+        seg.appendChild(b);
+      });
+      row.appendChild(seg);wrap.appendChild(row);continue;
     }
     const row=document.createElement('div');row.className='row';
     const v=state.params[d.key];

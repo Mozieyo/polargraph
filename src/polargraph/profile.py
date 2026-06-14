@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .geometry import GondolaGeometry, MachineGeometry, steps_per_mm
+from .warp import Warp
 
 PACKAGED_DEFAULT = Path(__file__).resolve().parent / "data" / "machine.toml"
 
@@ -52,6 +53,7 @@ class Profile:
     # safe workspace box in machine coords (slack-belt guard); None = unchecked
     safe_box: tuple[float, float, float, float] | None  # (x_min, y_min, x_max, y_max)
     homing: Homing | None                # endstop homing config; None = no homing
+    warp: Warp | None                    # TPS distortion correction; None = off
 
     @property
     def center_xy(self) -> tuple[float, float]:
@@ -61,7 +63,8 @@ class Profile:
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> "Profile":
-        data = tomllib.loads(resolve_profile(path).read_text(encoding="utf-8"))
+        prof_path = resolve_profile(path)
+        data = tomllib.loads(prof_path.read_text(encoding="utf-8"))
         geo = data.get("geometry", {})
         st = data.get("steppers", {})
         mo = data.get("motion", {})
@@ -125,4 +128,5 @@ class Profile:
             paper_origin_mm=(ox, oy),
             safe_box=safe,
             homing=homing,
+            warp=Warp.load(prof_path.parent / "warp.json"),
         )
