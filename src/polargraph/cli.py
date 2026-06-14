@@ -241,6 +241,22 @@ def cmd_warp_clear(a):
         print("no warp.json found - nothing to clear")
 
 
+def cmd_warp_shift(a):
+    """Add a uniform offset to the warp - parallel-shift the whole plot to fix a
+    registration offset. If the drawn centre sits R right / D down of where you want
+    it, correct with --dx -R --dy -D."""
+    from .warp import Warp
+    from .profile import resolve_profile
+    p = resolve_profile(a.profile).parent / "warp.json"
+    w = Warp.load(p)
+    if w is None:
+        raise SystemExit("no warp.json - run warp-fit first (or shift paper origin instead)")
+    w2 = Warp(w.x0, w.y0, w.step, w.nx, w.ny,
+              [v + a.dx for v in w.dx], [v + a.dy for v in w.dy], w.n_points)
+    p.write_text(w2.to_json())
+    print(f"shifted the whole plot by ({a.dx:+.1f}, {a.dy:+.1f}) mm  ->  {p}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="polargraph",
                                  description="SVG -> belt-length G-code for the polargraph")
@@ -308,6 +324,13 @@ def main(argv=None):
     sp = sub.add_parser("warp-clear", help="remove the active warp correction (warp.json)")
     sp.add_argument("--profile", default=None)
     sp.set_defaults(func=cmd_warp_clear)
+
+    sp = sub.add_parser("warp-shift",
+                        help="parallel-shift the whole plot (fix a registration offset)")
+    sp.add_argument("--dx", type=float, required=True, help="mm to add in X (drawn too far right -> negative)")
+    sp.add_argument("--dy", type=float, required=True, help="mm to add in Y (drawn too low -> negative)")
+    sp.add_argument("--profile", default=None)
+    sp.set_defaults(func=cmd_warp_shift)
 
     sp = sub.add_parser("calib-solve",
                         help="solve motor_spacing + steps/mm from a measured plotted rectangle")
