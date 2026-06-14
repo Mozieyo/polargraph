@@ -196,32 +196,33 @@ def home(ser, profile, on_log=None, on_status=None, should_abort=None):
 def disable_steppers(ser, on_log=None):
     """Release the servo and de-energize the stepper drivers.
 
-    1. M5       — release servo (stops PWM)
-    2. $1=0     — set idle-disable timeout to zero so steppers cut off when
-                  the motion buffer empties
-    3. M18      — explicit stepper-disable (grblHAL extension; harmless if
-                  unsupported — grbl replies "error:20" and continues)
-    4. G91 G0 X0.001  — tiny relative move so the idle timeout fires and
-                  the $1=0 setting takes effect (disables steppers)
-    5. $SLP     — put controller to sleep
+    1. M5            — release servo (stops PWM)
+    2. $1=0          — set idle-disable timeout to zero so steppers cut off
+                       when the motion buffer empties
+    3. G91 G0 X0.001 — tiny relative move; when it completes the $1=0
+                       timeout fires and actually disables the drivers
+    4. $SLP          — put controller to sleep
+
+    The G0 is the critical step — without a move the idle-disable
+    mechanism never triggers.  M18/M84 are NOT used (grblHAL returns
+    error:20 — unsupported command).
 
     The next session must call wake() (sends Ctrl-X soft reset) to bring
     the drivers back — wake() restores the pre-sleep $1 value.
 
-    Prerequisites — check these if steppers won't release:
-      • A4988 EN pin wired to Pico GP8 (NOT GND).  See firmware/pinmap.md
-      • grbl setting $4=3  (invert X + Y enable — A4988 EN is active-LOW).
-        Check with  > $4  in the console; set with  $4=3.
+    Prerequisites if steppers still hold:
+      • A4988 EN pin wired to Pico GP8 (NOT GND).  firmware/pinmap.md
+      • grbl $4=3  (invert X+Y enable — A4988 EN is active-LOW).
+        Check with  > $4 ; set with  $4=3
     """
     _send_and_wait(ser, "M5")
     _send_and_wait(ser, "$1=0")
-    _send_and_wait(ser, "M18")          # grblHAL extension, ignored if unsupported
     _send_and_wait(ser, "G91 G0 X0.001")  # tiny move → idle → $1=0 fires
     ser.write(b"$SLP\n")
     ser.flush()
     time.sleep(0.3)
     if on_log:
-        on_log("# steppers disabled (M5 + $1=0 + M18 + $SLP)")
+        on_log("# steppers disabled (M5 + $1=0 + tiny move + $SLP)")
         on_log("# if motors still hold: check $4=3 (A4988 EN active-LOW), "
                "EN→GP8 (not GND)")
 
