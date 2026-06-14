@@ -85,6 +85,8 @@ def cmd_gcode(a):
     print(f"  draw {stats['draw_mm']:.0f} mm, travel {stats['travel_mm']:.0f} mm"
           + (f" (2-opt saved {stats['opt_saved_mm']:.0f} mm)" if stats.get('opt_saved_mm') else ""))
     print(f"  est {stats['est_min']:.1f} min (+ pen dwells)")
+    if stats.get("clipped_pts"):
+        print(f"  cropped {stats['clipped_pts']} points out of the no-go zone")
 
 
 def cmd_verify(a):

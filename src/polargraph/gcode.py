@@ -104,6 +104,56 @@ def _pen(lines: list[str], s: float, settle_ms: float) -> None:
     lines.append(f"G4 P{settle_ms / 1000.0:.3f}")
 
 
+def _inside(p: Point, box) -> bool:
+    return box[0] <= p[0] <= box[2] and box[1] <= p[1] <= box[3]
+
+
+def _clip_seg(a: Point, b: Point, box):
+    """Liang-Barsky: the inside portion ``(p, q)`` of segment a->b vs the box, or None."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    t0, t1 = 0.0, 1.0
+    for pp, qq in ((-dx, a[0] - box[0]), (dx, box[2] - a[0]),
+                   (-dy, a[1] - box[1]), (dy, box[3] - a[1])):
+        if pp == 0:
+            if qq < 0:
+                return None
+        else:
+            r = qq / pp
+            if pp < 0:
+                if r > t1:
+                    return None
+                t0 = max(t0, r)
+            else:
+                if r < t0:
+                    return None
+                t1 = min(t1, r)
+    return ((a[0] + t0 * dx, a[1] + t0 * dy), (a[0] + t1 * dx, a[1] + t1 * dy))
+
+
+def _clip_runs(pts: list[Point], box) -> list[list[Point]]:
+    """Crop a polyline to the box: a list of inside sub-polylines, split where it
+    crosses out of the no-go zone (endpoints interpolated to the boundary)."""
+    runs: list[list[Point]] = []
+    cur: list[Point] = []
+    for a, b in zip(pts, pts[1:]):
+        seg = _clip_seg(a, b, box)
+        if seg is None:
+            if len(cur) >= 2:
+                runs.append(cur)
+            cur = []
+            continue
+        pa, pb = seg
+        if cur and abs(cur[-1][0] - pa[0]) < 1e-6 and abs(cur[-1][1] - pa[1]) < 1e-6:
+            cur.append(pb)
+        else:
+            if len(cur) >= 2:
+                runs.append(cur)
+            cur = [pa, pb]
+    if len(cur) >= 2:
+        runs.append(cur)
+    return runs
+
+
 def generate(layers: list[dict], profile: Profile, optimize: bool = True,
              ignore_limits: bool = False):
     """Return ``(gcode_lines, stats)``.
@@ -117,13 +167,7 @@ def generate(layers: list[dict], profile: Profile, optimize: bool = True,
     warp = profile.warp  # TPS distortion pre-correction (paper coords), or None
 
     box = None if ignore_limits else profile.safe_box
-    viol = [0, 1e9, -1e9, 1e9, -1e9]  # count, x_min, x_max, y_min, y_max seen
-
-    def check(x, y):
-        if box and not (box[0] <= x <= box[2] and box[1] <= y <= box[3]):
-            viol[0] += 1
-            viol[1] = min(viol[1], x); viol[2] = max(viol[2], x)
-            viol[3] = min(viol[3], y); viol[4] = max(viol[4], y)
+    clipped_pts = 0  # points cropped out of the no-go zone
 
     L: list[str] = [
         "; PolarGraph G-code  (axes: X = left belt L1, Y = right belt L2, mm)",
@@ -157,39 +201,35 @@ def generate(layers: list[dict], profile: Profile, optimize: bool = True,
             if warp:  # pre-warp each command point (paper coords) so output lands true
                 pts = [(ox + wx, oy + wy) for wx, wy in
                        (warp.apply(p[0] - ox, p[1] - oy) for p in pts)]
-            for p in pts:
-                check(*p)
-            if last is not None:
-                travel_mm += _dist(last, pts[0])
-            l1, l2 = geo.ik(*pts[0])
-            L.append(f"G0 X{l1:.3f} Y{l2:.3f}")
-            _pen(L, profile.pen_down_s, profile.pen_settle_ms)
-            prev = pts[0]
-            pl1, pl2 = l1, l2
-            for p in pts[1:]:
-                cart = _dist(prev, p)
-                cl1, cl2 = geo.ik(*p)
-                belt = math.hypot(cl1 - pl1, cl2 - pl2)
-                f = profile.draw_feed_mm_min * (belt / cart) if cart > 1e-9 else profile.draw_feed_mm_min
-                L.append(f"G1 X{cl1:.3f} Y{cl2:.3f} F{f:.0f}")
-                draw_mm += cart
-                nseg += 1
-                prev, pl1, pl2 = p, cl1, cl2
-            _pen(L, profile.pen_up_s, profile.pen_settle_ms)
-            last = pts[-1]
-
-    if viol[0]:
-        raise ValueError(
-            f"toolpath leaves the safe workspace ({viol[0]} points, "
-            f"x {viol[1]:.0f}..{viol[2]:.0f}, y {viol[3]:.0f}..{viol[4]:.0f} mm vs "
-            f"safe x {box[0]:.0f}..{box[2]:.0f}, y {box[1]:.0f}..{box[3]:.0f}) - "
-            "slack-belt danger zone; shrink/move the art or pass --ignore-limits")
+            if box:  # crop out any part in the no-go zone instead of failing
+                clipped_pts += sum(1 for p in pts if not _inside(p, box))
+                runs = _clip_runs(pts, box)
+            else:
+                runs = [pts]
+            for run in runs:
+                if last is not None:
+                    travel_mm += _dist(last, run[0])
+                l1, l2 = geo.ik(*run[0])
+                L.append(f"G0 X{l1:.3f} Y{l2:.3f}")
+                _pen(L, profile.pen_down_s, profile.pen_settle_ms)
+                prev, pl1, pl2 = run[0], l1, l2
+                for p in run[1:]:
+                    cart = _dist(prev, p)
+                    cl1, cl2 = geo.ik(*p)
+                    belt = math.hypot(cl1 - pl1, cl2 - pl2)
+                    f = profile.draw_feed_mm_min * (belt / cart) if cart > 1e-9 else profile.draw_feed_mm_min
+                    L.append(f"G1 X{cl1:.3f} Y{cl2:.3f} F{f:.0f}")
+                    draw_mm += cart
+                    nseg += 1
+                    prev, pl1, pl2 = p, cl1, cl2
+                _pen(L, profile.pen_up_s, profile.pen_settle_ms)
+                last = run[-1]
 
     L.append("; end")
     est_min = (draw_mm / profile.draw_feed_mm_min
                + travel_mm / max(profile.travel_feed_mm_min, 1.0))
     stats = {"draw_mm": draw_mm, "travel_mm": travel_mm, "segments": nseg,
-             "est_min": est_min, "opt_saved_mm": opt_saved_mm}
+             "est_min": est_min, "opt_saved_mm": opt_saved_mm, "clipped_pts": clipped_pts}
     return L, stats
 
 
