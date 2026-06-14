@@ -710,7 +710,7 @@ GEN.image={key:'image',label:'Image → art',
     {key:'glyph',label:'Dither glyph',min:0,max:4,step:1,def:3,enum:['dot','dash','cross','ramp','hand'],show:P=>P.mode===0},
     {key:'asciichars',label:'ASCII ramp (light→dark)',type:'text',def:' .:-=+*#%@',show:P=>P.mode===3},
     {key:'asciifont',label:'Glyph font',type:'font',def:'monospace',show:P=>P.mode===3},
-    {key:'_fontfile',label:'Load font file (.ttf/.otf)',type:'file',kind:'font',show:P=>P.mode===3},{key:'asciistroke',label:'Font mode',min:0,max:1,step:1,def:1,enum:['outline','stroke'],show:P=>P.mode===3},
+    {key:'_fontfile',label:'Load font file (.ttf/.otf)',type:'file',kind:'font',show:P=>P.mode===3},{key:'asciistroke',label:'Font mode',min:0,max:1,step:1,def:1,enum:['outline','stroke'],show:P=>P.mode===3},{key:'asciisize',label:'Glyph size',min:.3,max:3,step:.05,def:1,show:P=>P.mode===3},
     {key:'shape',label:'Point shape',min:0,max:6,step:1,def:1,enum:['dot','circle','square','triangle','diamond','cross','heart'],show:P=>P.mode>=4},
     {key:'psize',label:'Point size',min:.3,max:3,step:.1,def:1,show:P=>P.mode>=4},
     {key:'accent',label:'Mix-in shape',min:0,max:7,step:1,def:0,enum:['none','dot','circle','square','triangle','diamond','cross','heart'],show:P=>P.mode>=4},
@@ -751,7 +751,7 @@ GEN.image={key:'image',label:'Image → art',
       const ramp=(P.asciichars&&P.asciichars.length)?P.asciichars:' .:-=+*#%@';
       const font=P.asciifont||'monospace';
       const useStroke=P.asciistroke!==0; // default to stroke (Hershey) for blob-free output
-      const cellH=Math.max(1.6,P.density*2.2), cellW=cellH*0.6, size=cellH;
+      const cellH=Math.max(1.6,P.density*2.2), cellW=cellH*0.6, size=cellH*(P.asciisize||1);
       for(let y=r.y0+cellH/2;y<=r.y1;y+=cellH)
         for(let x=r.x0+cellW/2;x<=r.x1;x+=cellW){
           const gx=x+(rng()-.5)*cellW*P.jit, gy=y+(rng()-.5)*cellH*P.jit;
