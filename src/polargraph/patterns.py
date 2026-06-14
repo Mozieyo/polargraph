@@ -46,3 +46,33 @@ def calibration_svg(paper_w_mm: float, paper_h_mm: float, square_mm: float = 150
     out.append(f'<polyline points="{_poly([(cx, cy - a), (cx, cy + a)])}"/>')
     out.append("</g></svg>")
     return "\n".join(out) + "\n"
+
+
+def calibration_grid_svg(paper_w_mm: float, paper_h_mm: float, extent_mm: float = 200.0,
+                         cell_mm: float = 10.0, stroke: str = "#111111") -> str:
+    """A centred grid of ``cell_mm`` squares over an ``extent_mm`` square. The outer
+    border is the commanded reference to measure (W x H -> calib-solve); the interior
+    cells reveal LOCAL warp - on a true machine every cell is square and 10 mm; if the
+    kinematics are off, cells stretch/skew differently across the sheet, mapping the
+    distortion field so it can be corrected geometrically.
+    """
+    extent = min(extent_mm, paper_w_mm - 10.0, paper_h_mm - 10.0)
+    n = max(1, round(extent / cell_mm))
+    extent = n * cell_mm
+    cx, cy = paper_w_mm / 2.0, paper_h_mm / 2.0
+    x0, y0 = cx - extent / 2.0, cy - extent / 2.0
+    out = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{paper_w_mm}mm" '
+        f'height="{paper_h_mm}mm" viewBox="0 0 {paper_w_mm} {paper_h_mm}">',
+        f'<!-- polargraph calibration grid: {n}x{n} cells of {cell_mm}mm '
+        f'({extent:.0f}mm square) -->',
+        f'<g stroke="{stroke}" fill="none" stroke-width="0.3">',
+    ]
+    for j in range(n + 1):  # horizontal grid lines
+        y = y0 + j * cell_mm
+        out.append(f'<polyline points="{_poly([(x0, y), (x0 + extent, y)])}"/>')
+    for i in range(n + 1):  # vertical grid lines
+        x = x0 + i * cell_mm
+        out.append(f'<polyline points="{_poly([(x, y0), (x, y0 + extent)])}"/>')
+    out.append("</g></svg>")
+    return "\n".join(out) + "\n"

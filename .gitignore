@@ -11,6 +11,8 @@ venv/
 
 # Generated artifacts
 output/
+calibration.svg
+calibration.gcode
 
 # Editor / OS
 .vscode/

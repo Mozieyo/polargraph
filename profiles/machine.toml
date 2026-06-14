@@ -32,6 +32,21 @@ safe_x_max = 268.0        # D - 50
 safe_y_min = 55.0         # too high = both belts near-horizontal, weak control
 safe_y_max = 385.0        # bottom of travel - counterweight endstop bottoms out
 
+[homing]
+# Software homing: LOWER the gondola (pay out / lengthen both belts) until its BOTTOM
+# endstop engages (gondola down -> counterweights up -> switch depressed), back off,
+# then G92 to the homed belt lengths. Needs hard limits OFF ($21=0) so jogging into a
+# switch reports on Pn without alarming.
+# >>> home_x_mm / home_y_mm are still PLACEHOLDERS: after homing settles, measure where
+#     the pen actually sits and set them so centring/placement is correct. <<<
+seek_mm = 360         # max belt travel to hunt for the switch (range ~9.5 rev = 304 mm)
+feed_mm_min = 300     # gentle jog into the switch
+pull_off_mm = 4       # back off after it trips (releases the switch)
+x_seek_sign = 1       # +1 lengthens belt L1 -> lowers the gondola toward its endstop
+y_seek_sign = 1       # +1 lengthens belt L2
+home_x_mm = 159.0     # gondola machine-X at home (D/2 = centred by symmetry - confirm)
+home_y_mm = 385.0     # gondola machine-Y at home (bottom of travel placeholder - MEASURE)
+
 [pen]
 # SG90 via grblHAL spindle PWM (GP15), $33=50Hz.
 # COLD-BOOT GOTCHA: $33 only re-clocks the PWM on a power-cycle (not soft-reset or a

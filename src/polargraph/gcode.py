@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 import re
+import time
 
 from .profile import Profile
 from .segment import segment_polyline
@@ -43,6 +44,59 @@ def _greedy_order(polys: list[list[Point]], start: Point = (0.0, 0.0)) -> list[l
         ordered.append(p)
         cur = p[-1]
     return ordered
+
+
+def _travel_of(order: list[list[Point]], start: Point) -> float:
+    """Total pen-up travel for an ordered, oriented list of polylines."""
+    t = 0.0
+    cur = start
+    for p in order:
+        t += _dist(cur, p[0])
+        cur = p[-1]
+    return t
+
+
+def _two_opt(order: list[list[Point]], start: Point,
+             max_n: int = 2500, time_budget: float = 2.5) -> list[list[Point]]:
+    """Refine a path order with first-improvement 2-opt (reverses a block and flips
+    each polyline's direction). The reversal's internal travel is unchanged, so each
+    move's gain is an O(1) check on the two cut gaps. Bounded by ``max_n``/``time_budget``
+    so dense art stays responsive; greedy order is the starting point."""
+    n = len(order)
+    if n < 4 or n > max_n:
+        return order
+    s = [p[0] for p in order]
+    e = [p[-1] for p in order]
+
+    def gap(a: Point, b: Point) -> float:
+        return math.hypot(a[0] - b[0], a[1] - b[1])
+
+    deadline = time.time() + time_budget
+    improved = True
+    while improved and time.time() < deadline:
+        improved = False
+        for i in range(n - 1):
+            pe = e[i - 1] if i > 0 else start   # end of the node before the block
+            si = s[i]
+            d_before_i = gap(pe, si)
+            for j in range(i + 1, n):
+                ej = e[j]
+                if j + 1 < n:
+                    sn = s[j + 1]
+                    before = d_before_i + gap(ej, sn)
+                    after = gap(pe, ej) + gap(si, sn)
+                else:                            # block runs to the end: one cut only
+                    before = d_before_i
+                    after = gap(pe, ej)
+                if after + 1e-9 < before:
+                    order[i:j + 1] = [p[::-1] for p in reversed(order[i:j + 1])]
+                    for k in range(i, j + 1):
+                        s[k], e[k] = order[k][0], order[k][-1]
+                    improved = True
+                    break                        # restart the j-scan from this i
+            if improved:
+                break
+    return order
 
 
 def _pen(lines: list[str], s: float, settle_ms: float) -> None:
@@ -81,14 +135,18 @@ def generate(layers: list[dict], profile: Profile, optimize: bool = True,
     ]
     _pen(L, profile.pen_up_s, profile.pen_settle_ms)
 
-    draw_mm = travel_mm = 0.0
+    draw_mm = travel_mm = opt_saved_mm = 0.0
     nseg = 0
     last: Point | None = None
 
     for layer in layers:
         polys = [[(ox + px, oy + py) for px, py in poly] for poly in layer["polylines"]]
-        if optimize:
-            polys = _greedy_order(polys, last or (ox, oy))
+        if optimize and polys:
+            anchor = last or (ox, oy)
+            polys = _greedy_order(polys, anchor)
+            t_greedy = _travel_of(polys, anchor)
+            polys = _two_opt(polys, anchor)
+            opt_saved_mm += max(0.0, t_greedy - _travel_of(polys, anchor))
         if layer.get("stroke"):
             L.append(f"; --- pen layer: {layer['stroke']} ---")
         for poly in polys:
@@ -126,7 +184,8 @@ def generate(layers: list[dict], profile: Profile, optimize: bool = True,
     L.append("; end")
     est_min = (draw_mm / profile.draw_feed_mm_min
                + travel_mm / max(profile.travel_feed_mm_min, 1.0))
-    stats = {"draw_mm": draw_mm, "travel_mm": travel_mm, "segments": nseg, "est_min": est_min}
+    stats = {"draw_mm": draw_mm, "travel_mm": travel_mm, "segments": nseg,
+             "est_min": est_min, "opt_saved_mm": opt_saved_mm}
     return L, stats
 
 

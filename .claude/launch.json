@@ -4,8 +4,9 @@
     {
       "name": "studio",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["tools/studio_server.py"],
-      "port": 8770
+      "runtimeArgs": ["-c", "from src.polargraph import server; server.run(http_port=8770)"],
+      "port": 8770,
+      "autoPort": false
     }
   ]
 }

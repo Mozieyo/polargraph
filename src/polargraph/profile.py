@@ -27,6 +27,16 @@ def resolve_profile(path: str | Path | None = None) -> Path:
 
 
 @dataclass(frozen=True)
+class Homing:
+    seek_mm: float          # max belt travel to hunt for the switch
+    feed_mm_min: float      # homing jog speed
+    pull_off_mm: float      # back off after the switch trips
+    x_seek_sign: int        # jog sign that drives belt L1 toward its endstop
+    y_seek_sign: int        # jog sign for L2
+    home_xy: tuple[float, float]  # gondola machine-XY after homing settles
+
+
+@dataclass(frozen=True)
 class Profile:
     geometry: MachineGeometry | GondolaGeometry
     belt_steps_per_mm: float
@@ -41,6 +51,13 @@ class Profile:
     paper_origin_mm: tuple[float, float]  # machine coords of the paper's top-left
     # safe workspace box in machine coords (slack-belt guard); None = unchecked
     safe_box: tuple[float, float, float, float] | None  # (x_min, y_min, x_max, y_max)
+    homing: Homing | None                # endstop homing config; None = no homing
+
+    @property
+    def center_xy(self) -> tuple[float, float]:
+        """Machine coords of the paper centre - where 'home' parks the gondola."""
+        ox, oy = self.paper_origin_mm
+        return (ox + self.paper_w_mm / 2.0, oy + self.paper_h_mm / 2.0)
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> "Profile":
@@ -80,6 +97,19 @@ class Profile:
             safe = (float(lim.get("safe_x_min", -1e9)), float(lim.get("safe_y_min", -1e9)),
                     float(lim.get("safe_x_max", 1e9)), float(lim.get("safe_y_max", 1e9)))
 
+        hm = data.get("homing", {})
+        homing = None
+        if hm:
+            homing = Homing(
+                seek_mm=float(hm.get("seek_mm", 360.0)),
+                feed_mm_min=float(hm.get("feed_mm_min", 300.0)),
+                pull_off_mm=float(hm.get("pull_off_mm", 4.0)),
+                x_seek_sign=int(hm.get("x_seek_sign", -1)),
+                y_seek_sign=int(hm.get("y_seek_sign", -1)),
+                home_xy=(float(hm.get("home_x_mm", D / 2.0)),
+                         float(hm.get("home_y_mm", oy))),
+            )
+
         return cls(
             geometry=geometry,
             belt_steps_per_mm=spm,
@@ -94,4 +124,5 @@ class Profile:
             paper_h_mm=paper_h,
             paper_origin_mm=(ox, oy),
             safe_box=safe,
+            homing=homing,
         )

@@ -12,6 +12,7 @@ the machine with character-counting flow control. ASCII output (cp949-safe).
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import re
 
@@ -80,7 +81,8 @@ def cmd_gcode(a):
     npoly = sum(len(layer["polylines"]) for layer in layers)
     print(f"wrote {out}")
     print(f"  {len(layers)} layer(s), {npoly} paths, {stats['segments']} segments")
-    print(f"  draw {stats['draw_mm']:.0f} mm, travel {stats['travel_mm']:.0f} mm")
+    print(f"  draw {stats['draw_mm']:.0f} mm, travel {stats['travel_mm']:.0f} mm"
+          + (f" (2-opt saved {stats['opt_saved_mm']:.0f} mm)" if stats.get('opt_saved_mm') else ""))
     print(f"  est {stats['est_min']:.1f} min (+ pen dwells)")
 
 
@@ -99,6 +101,21 @@ def cmd_verify(a):
 def cmd_stream(a):
     prof = Profile.load(a.profile)
     lines = _load_lines(a.input, prof, ignore_limits=a.ignore_limits)
+    if getattr(a, "auto_home", False):  # endstop-home first, then draw in absolute coords
+        prog = sender._program(lines)
+        try:
+            ser, port = sender.open_port(a.port)
+        except Exception as e:  # noqa: BLE001
+            print(e)
+            raise SystemExit(3)
+        log = print
+        print(f"# port {port}: homing to endstops, then streaming {len(prog)} lines")
+        with ser:
+            sender.wake(ser, on_log=log)
+            if not sender.home(ser, prof, on_log=log):
+                print("homing failed - aborting (check [homing] direction/wiring)")
+                raise SystemExit(4)
+            raise SystemExit(sender._run(ser, prog, preamble=[], on_log=log))
     pre = []
     if not a.no_unlock:
         pre.append("$X")
@@ -121,14 +138,73 @@ def cmd_serve(a):
 
 def cmd_calib(a):
     prof = Profile.load(a.profile)
-    svg = patterns.calibration_svg(prof.paper_w_mm, prof.paper_h_mm,
-                                   square_mm=a.square, rings=a.rings)
+    if a.grid:
+        svg = patterns.calibration_grid_svg(prof.paper_w_mm, prof.paper_h_mm,
+                                             extent_mm=a.square, cell_mm=a.cell)
+        desc = f"{a.cell:.0f} mm grid over a {a.square:.0f} mm square"
+    else:
+        svg = patterns.calibration_svg(prof.paper_w_mm, prof.paper_h_mm,
+                                       square_mm=a.square, rings=a.rings)
+        desc = f"centered {a.square:.0f} mm square + {a.rings} rings + crosshair"
     out = a.out or "calibration.svg"
     with open(out, "w", encoding="utf-8") as f:
         f.write(svg)
-    print(f"wrote {out}  (centered {a.square:.0f} mm square + {a.rings} rings + crosshair)")
-    print(f"  next: polargraph gcode {out}  ->  plot  ->  measure the square vs "
-          f"{a.square:.0f} mm to dial steps/mm")
+    print(f"wrote {out}  ({desc})")
+    print(f"  next: plot it, measure the OUTER square's width and height, then:")
+    print(f"        polargraph calib-solve --commanded {a.square:.0f} {a.square:.0f} "
+          f"--measured <W> <H>")
+
+
+def cmd_calib_solve(a):
+    """Back-solve motor_spacing (sets the aspect) and steps/mm (sets the size) from a
+    plotted rectangle measured on paper. Commanded size in, measured size out."""
+    prof = Profile.load(a.profile)
+    geo = prof.geometry
+    M = prof.belt_steps_per_mm                 # current grbl $100/$101 (steps/mm)
+    cx, cy = prof.center_xy
+    wc, hc = a.commanded
+    wm, hm = a.measured
+    corners = [(cx - wc / 2, cy - hc / 2), (cx + wc / 2, cy - hc / 2),
+               (cx + wc / 2, cy + hc / 2), (cx - wc / 2, cy + hc / 2)]
+    cmd_belts = [geo.ik(*c) for c in corners]  # belts we command (model D)
+
+    def sim(D, s):
+        xs, ys = [], []
+        for l1, l2 in cmd_belts:               # real machine: belts scaled by s, FK with real D
+            L1, L2 = s * l1, s * l2
+            x = (L1 * L1 - L2 * L2 + D * D) / (2 * D)
+            xs.append(x)
+            ys.append(math.sqrt(max(0.0, L1 * L1 - x * x)))
+        return max(xs) - min(xs), max(ys) - min(ys)
+
+    lo_d, hi_d, lo_s, hi_s = 150.0, 480.0, 0.6, 1.5
+    best = (1e18, geo.motor_spacing_mm, 1.0)
+    for _ in range(7):                         # coarse-to-fine grid search
+        for di in range(41):
+            D = lo_d + (hi_d - lo_d) * di / 40
+            for si in range(41):
+                s = lo_s + (hi_s - lo_s) * si / 40
+                w, h = sim(D, s)
+                e = (w - wm) ** 2 + (h - hm) ** 2
+                if e < best[0]:
+                    best = (e, D, s)
+        _, D, s = best
+        dd, ds = (hi_d - lo_d) / 40 * 1.5, (hi_s - lo_s) / 40 * 1.5
+        lo_d, hi_d, lo_s, hi_s = D - dd, D + dd, s - ds, s + ds
+
+    _, D, s = best
+    new_spm = M / s
+    w, h = sim(D, s)
+    print("calibration solve:")
+    print(f"  commanded {wc:.1f} x {hc:.1f} mm  ->  measured {wm:.1f} x {hm:.1f} mm")
+    print(f"  fit residual: {best[0] ** 0.5:.2f} mm  (model now prints {w:.1f} x {h:.1f})")
+    print("  --- apply these ---")
+    print(f"  profiles/machine.toml  [geometry] motor_spacing_mm = {D:.1f}"
+          f"   (was {geo.motor_spacing_mm:.1f})")
+    print(f"  grbl board             $100={new_spm:.3f}  $101={new_spm:.3f}"
+          f"   (was {M:.3f}; steps/mm sets absolute size)")
+    if abs(s - 1.0) < 0.01:
+        print("  (size was already accurate; only the aspect/motor_spacing needed fixing)")
 
 
 def main(argv=None):
@@ -156,6 +232,8 @@ def main(argv=None):
     sp.add_argument("--profile", default=None)
     sp.add_argument("--no-g92", action="store_true", help="don't set position (assume already homed)")
     sp.add_argument("--no-unlock", action="store_true", help="don't send $X first")
+    sp.add_argument("--auto-home", action="store_true",
+                    help="run the endstop homing cycle first, then draw in absolute coords")
     sp.add_argument("--ignore-limits", action="store_true",
                     help="bypass the safe-workspace (slack-belt) check")
     sp.set_defaults(func=cmd_stream)
@@ -166,12 +244,25 @@ def main(argv=None):
     sp.add_argument("--open", action="store_true", help="open the Studio in the default browser")
     sp.set_defaults(func=cmd_serve)
 
-    sp = sub.add_parser("calib", help="write a calibration pattern SVG (square + circles)")
+    sp = sub.add_parser("calib", help="write a calibration pattern SVG (square+circles, or a grid)")
     sp.add_argument("-o", "--out")
-    sp.add_argument("--square", type=float, default=150.0, help="square side in mm")
+    sp.add_argument("--square", type=float, default=150.0,
+                    help="square side / grid extent in mm")
     sp.add_argument("--rings", type=int, default=4, help="number of concentric circles")
+    sp.add_argument("--grid", action="store_true",
+                    help="draw a grid of --cell squares (warp is visible per cell)")
+    sp.add_argument("--cell", type=float, default=10.0, help="grid cell size in mm (with --grid)")
     sp.add_argument("--profile", default=None)
     sp.set_defaults(func=cmd_calib)
+
+    sp = sub.add_parser("calib-solve",
+                        help="solve motor_spacing + steps/mm from a measured plotted rectangle")
+    sp.add_argument("--commanded", type=float, nargs=2, metavar=("W", "H"), required=True,
+                    help="the rectangle size you plotted, mm (e.g. --commanded 150 150)")
+    sp.add_argument("--measured", type=float, nargs=2, metavar=("W", "H"), required=True,
+                    help="what you measured on paper, mm (e.g. --measured 150 178)")
+    sp.add_argument("--profile", default=None)
+    sp.set_defaults(func=cmd_calib_solve)
 
     a = ap.parse_args(argv)
     a.func(a)

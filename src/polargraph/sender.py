@@ -64,26 +64,176 @@ def _send_and_wait(ser, line, timeout=4.0):
     return None
 
 
+def _state(status_line):
+    return status_line.strip("<>").split("|")[0] if status_line else ""
+
+
+def _pn(status_line):
+    for part in status_line.strip("<>").split("|"):
+        if part.startswith("Pn:"):
+            return part[3:]
+    return ""
+
+
+def _query(ser, timeout=0.5):
+    """Send '?' and return the next <...> status line (or '')."""
+    ser.write(b"?")
+    ser.flush()
+    end = time.time() + timeout
+    while time.time() < end:
+        raw = ser.readline()
+        if raw:
+            t = raw.decode("ascii", "replace").strip()
+            if t.startswith("<"):
+                return t
+    return ""
+
+
+def _wait_idle(ser, timeout=25.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        if _state(_query(ser)).startswith(("Idle", "Alarm", "Check")):
+            return True
+        time.sleep(0.08)
+    return False
+
+
+def open_port(port=None, baud=115200):
+    """Open the machine's serial port. Returns ``(ser, port)``; raises on failure."""
+    if serial is None:
+        raise RuntimeError("pyserial not installed (python -m pip install pyserial)")
+    port = find_port(port)
+    if not port:
+        raise RuntimeError("no machine found - plug in the Pico's USB and power")
+    return serial.Serial(port, baud, timeout=0.1), port
+
+
+def wake(ser, on_log=None):
+    """Ready the board for a session: only soft-reset if it's asleep (from a prior
+    $SLP) or unresponsive - a reset drops holding torque, so we avoid it when the
+    board is already awake. Always $X-unlock afterwards."""
+    s = _query(ser)
+    if "Sleep" in s or not s:        # asleep / unresponsive -> needs a reset to revive
+        ser.write(b"\x18")           # Ctrl-X soft reset
+        time.sleep(0.6)
+        ser.reset_input_buffer()
+        if on_log:
+            on_log("# board revived from sleep (reset)")
+    _send_and_wait(ser, "$X")
+    if on_log:
+        on_log("# board ready")
+
+
+def home(ser, profile, on_log=None, on_status=None, should_abort=None):
+    """Lower the gondola to its endstops with BOTH belts paying out together, so it
+    descends down the centreline and never wanders into the slack-belt zone (where a
+    belt jumps the pulley). Each axis drops out of the jog as its switch trips; the
+    other keeps going. Then back off and G92 to the homed belt lengths.
+
+    Relies on hard limits being OFF ($21=0): jogging into a switch reports it on the
+    Pn field without alarming, so we cancel the jog the instant it trips."""
+    def log(m):
+        print(m)
+        if on_log:
+            on_log(m)
+
+    h = getattr(profile, "homing", None)
+    if h is None:
+        log("! no [homing] section in the profile - cannot home")
+        return False
+
+    _send_and_wait(ser, "$X")
+    geo = profile.geometry
+    pending = {"X": h.x_seek_sign, "Y": h.y_seek_sign}  # axes still seeking their switch
+
+    def jog_pending():
+        ser.reset_input_buffer()
+        parts = " ".join(f"{ax}{sign * h.seek_mm:.1f}" for ax, sign in pending.items())
+        ser.write(f"$J=G91 G21 {parts} F{h.feed_mm_min:.0f}\n".encode())
+        ser.flush()
+
+    log("# homing: lowering the gondola (both belts together) to the endstops")
+    jog_pending()
+    deadline = time.time() + (h.seek_mm / max(h.feed_mm_min, 1) * 60) + 8
+    while pending and time.time() < deadline:
+        if should_abort and should_abort():
+            ser.write(b"\x85")
+            log("# homing aborted")
+            return False
+        s = _query(ser)
+        if on_status and s:
+            on_status(s)
+        pn = _pn(s)
+        tripped = [ax for ax in pending if ax in pn]
+        if tripped:
+            ser.write(b"\x85")  # cancel the jog the instant a switch trips
+            _wait_idle(ser)
+            for ax in tripped:
+                log(f"# {ax} endstop reached")
+                del pending[ax]
+            if pending:
+                jog_pending()  # keep lowering whichever belt hasn't tripped yet
+                deadline = time.time() + (h.seek_mm / max(h.feed_mm_min, 1) * 60) + 8
+        time.sleep(0.04)
+
+    if pending:
+        log(f"! endstop(s) not reached: {','.join(pending)} - check direction/wiring")
+        return False
+
+    _wait_idle(ser)
+    ser.write(f"$J=G91 G21 X{-h.x_seek_sign * h.pull_off_mm:.1f} "
+              f"Y{-h.y_seek_sign * h.pull_off_mm:.1f} F{h.feed_mm_min:.0f}\n".encode())
+    ser.flush()
+    _wait_idle(ser)
+    log(f"# both homed, backed off {h.pull_off_mm:.0f} mm")
+
+    l1, l2 = geo.ik(*h.home_xy)
+    _send_and_wait(ser, f"G92 X{l1:.3f} Y{l2:.3f}")
+    log(f"# home set: gondola ({h.home_xy[0]:.0f},{h.home_xy[1]:.0f}) -> L1={l1:.1f} L2={l2:.1f}")
+    return True
+
+
+def disable_steppers(ser, on_log=None):
+    """Release the servo and de-energize the stepper drivers (EN off) via $SLP sleep.
+    The next session must wake() the board (soft reset) to bring drivers back."""
+    _send_and_wait(ser, "M5")
+    ser.write(b"$SLP\n")
+    ser.flush()
+    time.sleep(0.3)
+    if on_log:
+        on_log("# steppers disabled, servo released ($SLP)")
+
+
 def _run(ser, prog, preamble=None, rx_buffer=RX_BUFFER, status_every=1.0,
-         progress=None, should_abort=None):
+         progress=None, should_abort=None, on_log=None, on_status=None,
+         is_paused=None):
     """Character-counting stream loop over an open serial-like object. Returns exit code.
 
     ``progress(acked, total, errors)`` is called about once per second;
     ``should_abort()`` is polled each loop - return True to feed-hold + reset.
+    ``on_log(text)`` receives notable events; ``on_status(raw)`` receives each
+    grbl ``<...>`` status report (both optional, for a live monitor).
     """
+    def log(msg):
+        print(msg)
+        if on_log:
+            on_log(msg)
+
     time.sleep(0.3)
     ser.reset_input_buffer()
     ser.write(b"\r\n")
     time.sleep(0.2)
     ser.reset_input_buffer()
-    print(f"# streaming {len(prog)} lines")
+    log(f"# streaming {len(prog)} lines")
     for p in (preamble or []):
-        _send_and_wait(ser, p)
+        r = _send_and_wait(ser, p)
+        log(f"  {p} -> {r}")
 
     inflight = []
     i = acked = sent = errors = 0
     t0 = time.time()
     last = 0.0
+    paused = False
     try:
         while acked < len(prog):
             if should_abort is not None and should_abort():
@@ -93,6 +243,16 @@ def _run(ser, prog, preamble=None, rx_buffer=RX_BUFFER, status_every=1.0,
                 ser.write(b"\x18")
                 time.sleep(0.3)
                 return 130
+            if is_paused is not None:  # feed-hold (!) / resume (~) as the flag flips
+                want = is_paused()
+                if want and not paused:
+                    ser.write(b"!")
+                    paused = True
+                    log("# paused (feed hold)")
+                elif not want and paused:
+                    ser.write(b"~")
+                    paused = False
+                    log("# resumed")
             while i < len(prog):
                 need = len(prog[i]) + 1
                 if sum(inflight) + need >= rx_buffer:
@@ -114,10 +274,12 @@ def _run(ser, prog, preamble=None, rx_buffer=RX_BUFFER, status_every=1.0,
                         inflight.pop(0)
                     acked += 1
                     errors += 1
-                    print(f"\n  ! {t} on line {acked}: {prog[acked - 1]}")
+                    log(f"  ! {t} on line {acked}: {prog[acked - 1]}")
                 elif t.startswith("ALARM"):
-                    print(f"\n  !! {t} - aborting")
+                    log(f"  !! {t} - aborting")
                     break
+                elif t.startswith("<") and on_status is not None:
+                    on_status(t)
             now = time.time()
             if now - last >= status_every:
                 last = now
@@ -131,7 +293,7 @@ def _run(ser, prog, preamble=None, rx_buffer=RX_BUFFER, status_every=1.0,
                 print(f"\r  {acked}/{len(prog)} ({100.0 * acked / len(prog):3.0f}%)"
                       f"  err={errors}   ", end="", flush=True)
         print(f"\r  {acked}/{len(prog)} (100%)  err={errors}        ")
-        print(f"# done in {time.time() - t0:.1f}s, {errors} error(s)")
+        log(f"# done in {time.time() - t0:.1f}s, {errors} error(s)")
         if progress is not None:
             progress(acked, len(prog), errors)
         return 1 if errors else 0
@@ -145,25 +307,77 @@ def _run(ser, prog, preamble=None, rx_buffer=RX_BUFFER, status_every=1.0,
 
 
 def stream(lines, port=None, baud=115200, preamble=None, rx_buffer=RX_BUFFER,
-           status_every=1.0, progress=None, should_abort=None):
+           status_every=1.0, progress=None, should_abort=None,
+           on_log=None, on_status=None):
     """Find/open the port and stream G-code lines. Returns an exit code (0 = clean)."""
+    def log(msg):
+        print(msg)
+        if on_log:
+            on_log(msg)
+
     if serial is None:
-        print("pyserial not installed: python -m pip install pyserial")
+        log("pyserial not installed: python -m pip install pyserial")
         return 2
     port = find_port(port)
     if not port:
-        print("no Pico found - plug in USB and power, or pass --port COMx")
+        log("no machine found - plug in the Pico's USB (and power), or pass --port COMx")
         return 3
     prog = _program(lines)
     if not prog:
-        print("nothing to send")
+        log("nothing to send")
         return 1
     try:
         ser = serial.Serial(port, baud, timeout=0.1)
     except Exception as e:  # noqa: BLE001
-        print(f"could not open {port}: {e}  (serial monitor open?)")
+        log(f"could not open {port}: {e}  (is a serial monitor holding the port?)")
         return 3
-    print(f"# port {port} @ {baud}")
+    log(f"# port {port} @ {baud}")
     with ser:
         return _run(ser, prog, preamble, rx_buffer, status_every,
-                    progress=progress, should_abort=should_abort)
+                    progress=progress, should_abort=should_abort,
+                    on_log=on_log, on_status=on_status)
+
+
+def console(cmds, port=None, baud=115200, read_for=0.6):
+    """One-shot: open the port, send each command, collect reply lines.
+
+    For the browser serial monitor / idle status pings. Real-time bytes ('?',
+    '!', '~', 0x18) are sent without a newline. Returns ``(port, lines)``;
+    ``lines`` is empty and ``port`` falsy if no machine / port busy.
+    """
+    if serial is None:
+        return None, ["pyserial not installed"]
+    port = find_port(port)
+    if not port:
+        return None, ["no machine found"]
+    if isinstance(cmds, str):
+        cmds = [cmds]
+    try:
+        ser = serial.Serial(port, baud, timeout=0.1)
+    except Exception as e:  # noqa: BLE001
+        return port, [f"could not open {port}: {e}"]
+    out: list[str] = []
+    with ser:
+        time.sleep(0.2)
+        ser.reset_input_buffer()
+        for c in cmds:
+            c = c.strip()
+            if not c:
+                continue
+            realtime = c in ("?", "!", "~") or c == "\x18"
+            ser.write(c.encode() if realtime else (c + "\n").encode())
+            ser.flush()
+            end = time.time() + read_for
+            while time.time() < end:
+                raw = ser.readline()
+                if not raw:
+                    continue
+                t = raw.decode("ascii", "replace").strip()
+                if t:
+                    out.append(t)
+                # an 'ok'/'error' closes a normal command; '<...>' closes a '?'
+                if not realtime and (t == "ok" or t.startswith("error:")):
+                    break
+                if realtime and t.startswith("<"):
+                    break
+    return port, out
