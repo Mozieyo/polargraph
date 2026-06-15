@@ -98,6 +98,27 @@ def _wait_idle(ser, timeout=25.0):
     return False
 
 
+def _wait_done(ser, timeout=30.0):
+    """Wait for a *just-issued* move to finish. Unlike _wait_idle, this first waits for
+    motion to BEGIN: grbl keeps reporting Idle for a few ms after it accepts a jog/move,
+    before the planner starts it, so a naive idle-check races ahead while the move is
+    still pending. We wait (briefly) for Run/Jog, then for Idle."""
+    t_start = time.time() + 1.2          # let the planner start (a tiny move may finish first)
+    while time.time() < t_start:
+        st = _state(_query(ser))
+        if st.startswith(("Run", "Jog", "Hold")):
+            break
+        if st.startswith("Alarm"):
+            return False
+        time.sleep(0.03)
+    end = time.time() + timeout
+    while time.time() < end:
+        if _state(_query(ser)).startswith(("Idle", "Alarm", "Check")):
+            return True
+        time.sleep(0.05)
+    return False
+
+
 def open_port(port=None, baud=115200):
     """Open the machine's serial port. Returns ``(ser, port)``; raises on failure."""
     if serial is None:
@@ -184,11 +205,18 @@ def home(ser, profile, on_log=None, on_status=None, should_abort=None):
     ser.write(f"$J=G91 G21 X{-h.x_seek_sign * h.pull_off_mm:.1f} "
               f"Y{-h.y_seek_sign * h.pull_off_mm:.1f} F{h.feed_mm_min:.0f}\n".encode())
     ser.flush()
-    _wait_idle(ser)
+    if not _wait_done(ser):   # pull-off MUST finish before we set the reference
+        log("! pull-off did not complete cleanly")
     log(f"# both homed, backed off {h.pull_off_mm:.0f} mm")
 
+    # set the home reference only once fully stopped, and confirm grbl accepted it
+    # (a G92 sent while still moving is rejected/applied at the wrong spot - the cause of
+    #  the intermittent "drifts to a weird angle / drives further down" homing failures)
     l1, l2 = geo.ik(*h.home_xy)
-    _send_and_wait(ser, f"G92 X{l1:.3f} Y{l2:.3f}")
+    if _send_and_wait(ser, f"G92 X{l1:.3f} Y{l2:.3f}") != "ok":
+        _wait_done(ser)
+        _send_and_wait(ser, f"G92 X{l1:.3f} Y{l2:.3f}")
+    _send_and_wait(ser, "G90")   # restore absolute mode after the G91 jogs
     log(f"# home set: gondola ({h.home_xy[0]:.0f},{h.home_xy[1]:.0f}) -> L1={l1:.1f} L2={l2:.1f}")
     return True
 

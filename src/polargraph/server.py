@@ -156,7 +156,7 @@ def _session(plan):
                     l1, l2 = geo.ik(*prof.center_xy)
                     sender._send_and_wait(ser, pen_up)
                     sender._send_and_wait(ser, f"G0 X{l1:.3f} Y{l2:.3f}")
-                    sender._wait_idle(ser)
+                    sender._wait_done(ser)   # let the centring move finish (not a stale Idle)
                     _logline(f"# centred at ({prof.center_xy[0]:.0f},{prof.center_xy[1]:.0f})")
 
                 if plan["pen_check"]:
@@ -187,7 +187,7 @@ def _session(plan):
                         sender._send_and_wait(ser, pen_up)
                         rl1, rl2 = plan["return_to"]
                         sender._send_and_wait(ser, f"G0 X{rl1:.3f} Y{rl2:.3f}")
-                        sender._wait_idle(ser)
+                        sender._wait_done(ser)
                         _logline("# pen up, returned to start")
                 else:
                     _finish("done", "homed & centred")
