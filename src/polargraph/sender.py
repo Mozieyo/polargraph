@@ -98,6 +98,27 @@ def _wait_idle(ser, timeout=25.0):
     return False
 
 
+def _wait_done(ser, timeout=30.0):
+    """Wait for a *just-issued* move to finish. Unlike _wait_idle, this first waits for
+    motion to BEGIN: grbl keeps reporting Idle for a few ms after it accepts a jog/move,
+    before the planner starts it, so a naive idle-check races ahead while the move is
+    still pending. We wait (briefly) for Run/Jog, then for Idle."""
+    t_start = time.time() + 1.2          # let the planner start (a tiny move may finish first)
+    while time.time() < t_start:
+        st = _state(_query(ser))
+        if st.startswith(("Run", "Jog", "Hold")):
+            break
+        if st.startswith("Alarm"):
+            return False
+        time.sleep(0.03)
+    end = time.time() + timeout
+    while time.time() < end:
+        if _state(_query(ser)).startswith(("Idle", "Alarm", "Check")):
+            return True
+        time.sleep(0.05)
+    return False
+
+
 def open_port(port=None, baud=115200):
     """Open the machine's serial port. Returns ``(ser, port)``; raises on failure."""
     if serial is None:
@@ -184,24 +205,54 @@ def home(ser, profile, on_log=None, on_status=None, should_abort=None):
     ser.write(f"$J=G91 G21 X{-h.x_seek_sign * h.pull_off_mm:.1f} "
               f"Y{-h.y_seek_sign * h.pull_off_mm:.1f} F{h.feed_mm_min:.0f}\n".encode())
     ser.flush()
-    _wait_idle(ser)
+    if not _wait_done(ser):   # pull-off MUST finish before we set the reference
+        log("! pull-off did not complete cleanly")
     log(f"# both homed, backed off {h.pull_off_mm:.0f} mm")
 
+    # set the home reference only once fully stopped, and confirm grbl accepted it
+    # (a G92 sent while still moving is rejected/applied at the wrong spot - the cause of
+    #  the intermittent "drifts to a weird angle / drives further down" homing failures)
     l1, l2 = geo.ik(*h.home_xy)
-    _send_and_wait(ser, f"G92 X{l1:.3f} Y{l2:.3f}")
+    if _send_and_wait(ser, f"G92 X{l1:.3f} Y{l2:.3f}") != "ok":
+        _wait_done(ser)
+        _send_and_wait(ser, f"G92 X{l1:.3f} Y{l2:.3f}")
+    _send_and_wait(ser, "G90")   # restore absolute mode after the G91 jogs
     log(f"# home set: gondola ({h.home_xy[0]:.0f},{h.home_xy[1]:.0f}) -> L1={l1:.1f} L2={l2:.1f}")
     return True
 
 
 def disable_steppers(ser, on_log=None):
-    """Release the servo and de-energize the stepper drivers (EN off) via $SLP sleep.
-    The next session must wake() the board (soft reset) to bring drivers back."""
+    """Release the servo and de-energize the stepper drivers.
+
+    1. M5            — release servo (stops PWM)
+    2. $1=0          — set idle-disable timeout to zero so steppers cut off
+                       when the motion buffer empties
+    3. G91 G0 X0.001 — tiny relative move; when it completes the $1=0
+                       timeout fires and actually disables the drivers
+    4. $SLP          — put controller to sleep
+
+    The G0 is the critical step — without a move the idle-disable
+    mechanism never triggers.  M18/M84 are NOT used (grblHAL returns
+    error:20 — unsupported command).
+
+    The next session must call wake() (sends Ctrl-X soft reset) to bring
+    the drivers back — wake() restores the pre-sleep $1 value.
+
+    Prerequisites if steppers still hold:
+      • A4988 EN pin wired to Pico GP8 (NOT GND).  firmware/pinmap.md
+      • grbl $4=3  (invert X+Y enable — A4988 EN is active-LOW).
+        Check with  > $4 ; set with  $4=3
+    """
     _send_and_wait(ser, "M5")
+    _send_and_wait(ser, "$1=0")
+    _send_and_wait(ser, "G91 G0 X0.001")  # tiny move → idle → $1=0 fires
     ser.write(b"$SLP\n")
     ser.flush()
     time.sleep(0.3)
     if on_log:
-        on_log("# steppers disabled, servo released ($SLP)")
+        on_log("# steppers disabled (M5 + $1=0 + tiny move + $SLP)")
+        on_log("# if motors still hold: check $4=3 (A4988 EN active-LOW), "
+               "EN→GP8 (not GND)")
 
 
 def _run(ser, prog, preamble=None, rx_buffer=RX_BUFFER, status_every=1.0,

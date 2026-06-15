@@ -7,6 +7,13 @@
       "runtimeArgs": ["-c", "from src.polargraph import server; server.run(http_port=8770)"],
       "port": 8770,
       "autoPort": false
+    },
+    {
+      "name": "studio-static",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8772", "--directory", "src/polargraph/studio"],
+      "port": 8772,
+      "autoPort": false
     }
   ]
 }
