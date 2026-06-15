@@ -420,7 +420,7 @@ function shapePoly(kind,x,y,s){
 }
 
 /* ---- SVG import: external vector file (Blender/Unity wireframe, Inkscape) -> polylines ---- */
-const IMPORTSVG={loaded:false,polys:[]};
+const IMPORTSVG={loaded:false,polys:[],vb:null};
 function _svgNums(s){return(String(s||'').match(/[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?/g)||[]).map(Number);}
 function _flattenPath(d,polys){
   const toks=String(d).match(/[MmLlHhVvCcSsQqTtAaZz]|[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?/g)||[];
@@ -447,18 +447,52 @@ function _flattenPath(d,polys){
   }
   flush();
 }
+// 2D affine matrix [a,b,c,d,e,f]: x'=a*x+c*y+e, y'=b*x+d*y+f
+function _matMul(m,n){return[m[0]*n[0]+m[2]*n[1],m[1]*n[0]+m[3]*n[1],m[0]*n[2]+m[2]*n[3],
+  m[1]*n[2]+m[3]*n[3],m[0]*n[4]+m[2]*n[5]+m[4],m[1]*n[4]+m[3]*n[5]+m[5]];}
+function _matApply(m,x,y){return[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]];}
+function _parseTransform(s){let m=[1,0,0,1,0,0];const re=/(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g;let mm;
+  while((mm=re.exec(s))){const a=_svgNums(mm[2]);let n=[1,0,0,1,0,0];
+    if(mm[1]==='matrix')n=a.slice(0,6);
+    else if(mm[1]==='translate')n=[1,0,0,1,a[0]||0,a[1]||0];
+    else if(mm[1]==='scale')n=[a[0]||1,0,0,(a.length>1?a[1]:a[0])||1,0,0];
+    else if(mm[1]==='rotate'){const r=(a[0]||0)*Math.PI/180,co=Math.cos(r),si=Math.sin(r),R=[co,si,-si,co,0,0];
+      n=a.length>2?_matMul([1,0,0,1,a[1],a[2]],_matMul(R,[1,0,0,1,-a[1],-a[2]])):R;}
+    else if(mm[1]==='skewX')n=[1,0,Math.tan((a[0]||0)*Math.PI/180),1,0,0];
+    else if(mm[1]==='skewY')n=[1,Math.tan((a[0]||0)*Math.PI/180),0,1,0,0];
+    m=_matMul(m,n);}
+  return m;}
 function parseSVGPaths(text){
   const doc=new DOMParser().parseFromString(text,'image/svg+xml');
   const polys=[];
-  doc.querySelectorAll('polyline,polygon').forEach(el=>{const f=_svgNums(el.getAttribute('points'));const p=[];
-    for(let i=0;i+1<f.length;i+=2)p.push([f[i],f[i+1]]);
-    if(el.tagName.toLowerCase()==='polygon'&&p.length>1)p.push(p[0]);if(p.length>1)polys.push(p);});
-  doc.querySelectorAll('line').forEach(el=>polys.push([[+el.getAttribute('x1'),+el.getAttribute('y1')],[+el.getAttribute('x2'),+el.getAttribute('y2')]]));
-  doc.querySelectorAll('path').forEach(el=>_flattenPath(el.getAttribute('d')||'',polys));
-  return polys.filter(p=>p.length>1);
+  function walk(el,m){
+    const tf=el.getAttribute&&el.getAttribute('transform');
+    const cm=tf?_matMul(m,_parseTransform(tf)):m;
+    const tag=(el.tagName||'').toLowerCase();
+    if(tag==='polyline'||tag==='polygon'){const f=_svgNums(el.getAttribute('points')),p=[];
+      for(let i=0;i+1<f.length;i+=2)p.push(_matApply(cm,f[i],f[i+1]));
+      if(tag==='polygon'&&p.length>1)p.push(p[0]);if(p.length>1)polys.push(p);}
+    else if(tag==='line')polys.push([_matApply(cm,+el.getAttribute('x1'),+el.getAttribute('y1')),
+      _matApply(cm,+el.getAttribute('x2'),+el.getAttribute('y2'))]);
+    else if(tag==='rect'){const x=+el.getAttribute('x')||0,y=+el.getAttribute('y')||0,
+      w=+el.getAttribute('width')||0,h=+el.getAttribute('height')||0;
+      if(w&&h)polys.push([[x,y],[x+w,y],[x+w,y+h],[x,y+h],[x,y]].map(q=>_matApply(cm,q[0],q[1])));}
+    else if(tag==='path'){const raw=[];_flattenPath(el.getAttribute('d')||'',raw);
+      for(const pl of raw)polys.push(pl.map(q=>_matApply(cm,q[0],q[1])));}
+    for(const ch of(el.children||[]))walk(ch,cm);
+  }
+  const root=doc.documentElement;
+  walk(root,[1,0,0,1,0,0]);
+  // source canvas: viewBox (or width/height) - so an SVG traced from an image lands
+  // EXACTLY where the image places its frame
+  let vb=null;const va=root.getAttribute('viewBox')||root.getAttribute('viewbox');
+  if(va){const n=_svgNums(va);if(n.length>=4&&n[2]>0&&n[3]>0)vb=[n[0],n[1],n[2],n[3]];}
+  if(!vb){const w=parseFloat(root.getAttribute('width')),h=parseFloat(root.getAttribute('height'));
+    if(w>0&&h>0)vb=[0,0,w,h];}
+  return {polys:polys.filter(p=>p.length>1),vb};
 }
 function loadImportSVG(text){try{
-  IMPORTSVG.polys=parseSVGPaths(text);IMPORTSVG.loaded=IMPORTSVG.polys.length>0;
+  const res=parseSVGPaths(text);IMPORTSVG.polys=res.polys;IMPORTSVG.vb=res.vb;IMPORTSVG.loaded=res.polys.length>0;
   const el=document.getElementById('v_svg');if(el)el.textContent=IMPORTSVG.loaded?(IMPORTSVG.polys.length+' paths'):'no paths';
   generate();toast(IMPORTSVG.loaded?('SVG imported: '+IMPORTSVG.polys.length+' paths'):'no plottable paths (curves flattened; groups ok)');
 }catch(e){toast('SVG parse failed');}}
@@ -551,13 +585,13 @@ const GEN={};
 
 GEN.flow={key:'flow',label:'Flow field',
   params:[
-    {key:'scale',label:'Field scale',min:.004,max:.05,step:.001,def:.014},
-    {key:'turns',label:'Turbulence',min:.5,max:4,step:.1,def:1.6},
-    {key:'step',label:'Step (mm)',min:.6,max:3,step:.1,def:1.4},
-    {key:'len',label:'Max length',min:15,max:240,step:5,def:120},
-    {key:'gap',label:'Seed spacing',min:3,max:16,step:.5,def:6},
+    {key:'scale',label:'Field scale',min:.002,max:.08,step:.001,def:.014},
+    {key:'turns',label:'Turbulence',min:0,max:8,step:.1,def:1.6},
+    {key:'step',label:'Step (mm)',min:.2,max:4,step:.1,def:1.4},
+    {key:'len',label:'Max length',min:5,max:600,step:5,def:120},
+    {key:'gap',label:'Seed spacing',min:.6,max:24,step:.2,def:6},
     {key:'jit',label:'Seed jitter',min:0,max:1,step:.05,def:.6},
-    {key:'minlen',label:'Min length',min:0,max:40,step:1,def:6},
+    {key:'minlen',label:'Min length',min:0,max:120,step:1,def:6},
   ],
   gen(c,P){const r=c.rect,rng=c.rng,out=Array.from({length:c.pens},()=>({pen:0,lines:[]}));
     out.forEach((o,i)=>o.pen=i);
@@ -582,9 +616,9 @@ GEN.flow={key:'flow',label:'Flow field',
 GEN.hatch={key:'hatch',label:'Variable hatch',
   params:[
     {key:'angle',label:'Angle (deg)',min:0,max:180,step:1,def:22},
-    {key:'minsp',label:'Min spacing',min:.6,max:5,step:.1,def:1},
-    {key:'maxsp',label:'Max spacing',min:1,max:12,step:.2,def:6},
-    {key:'fieldF',label:'Field freq',min:.2,max:4,step:.1,def:1},
+    {key:'minsp',label:'Min spacing',min:.25,max:8,step:.05,def:1},
+    {key:'maxsp',label:'Max spacing',min:.5,max:30,step:.2,def:6},
+    {key:'fieldF',label:'Field freq',min:.1,max:8,step:.1,def:1},
     {key:'fkind',label:'Field',min:0,max:4,step:1,def:0,enum:['noise','radial','waves','rings','diag']},
     {key:'cross',label:'Cross-hatch',min:0,max:1,step:1,def:0,enum:['off','on']},
   ],
@@ -610,10 +644,10 @@ GEN.shadeband={key:'shadeband',label:'Shade band',
     {key:'angle',label:'Band angle',min:0,max:180,step:1,def:0},
     {key:'pos',label:'Centre %',min:0,max:100,step:1,def:50},
     {key:'width',label:'Width %',min:5,max:100,step:1,def:60},
-    {key:'minsp',label:'Dense spacing',min:.4,max:6,step:.1,def:.9},
-    {key:'maxsp',label:'Sparse spacing',min:1,max:16,step:.2,def:8},
+    {key:'minsp',label:'Dense spacing',min:.2,max:8,step:.05,def:.9},
+    {key:'maxsp',label:'Sparse spacing',min:.5,max:40,step:.2,def:8},
     {key:'profile',label:'Profile',min:0,max:3,step:1,def:0,enum:['ramp','ramp-rev','peak','valley']},
-    {key:'wobble',label:'Edge wobble',min:0,max:6,step:.2,def:0},
+    {key:'wobble',label:'Edge wobble',min:0,max:20,step:.2,def:0},
   ],
   gen(c,P){const r=c.rect,out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
     const a=P.angle*Math.PI/180,dx=Math.cos(a),dy=Math.sin(a),nx=-dy,ny=dx;
@@ -640,10 +674,10 @@ GEN.shadeband={key:'shadeband',label:'Shade band',
 
 GEN.rotor={key:'rotor',label:'Rotor / moiré',
   params:[
-    {key:'bundles',label:'Bundles',min:2,max:14,step:1,def:6},
-    {key:'astep',label:'Angle step',min:1,max:40,step:1,def:11},
-    {key:'spacing',label:'Line spacing',min:1,max:8,step:.2,def:3},
-    {key:'jit',label:'Center drift',min:0,max:30,step:1,def:8},
+    {key:'bundles',label:'Bundles',min:2,max:48,step:1,def:6},
+    {key:'astep',label:'Angle step',min:.5,max:90,step:.5,def:11},
+    {key:'spacing',label:'Line spacing',min:.3,max:12,step:.1,def:3},
+    {key:'jit',label:'Center drift',min:0,max:60,step:1,def:8},
     {key:'a0',label:'Base angle',min:0,max:180,step:1,def:0},
   ],
   gen(c,P){const r=c.rect,rng=c.rng;const out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
@@ -660,9 +694,9 @@ GEN.rotor={key:'rotor',label:'Rotor / moiré',
 
 GEN.dither={key:'dither',label:'ASCII dither',
   params:[
-    {key:'cell',label:'Cell (mm)',min:1.4,max:7,step:.1,def:3},
+    {key:'cell',label:'Cell (mm)',min:.6,max:12,step:.1,def:3},
     {key:'fkind',label:'Field',min:0,max:4,step:1,def:1,enum:['noise','radial','waves','rings','diag']},
-    {key:'fieldF',label:'Field freq',min:.2,max:4,step:.1,def:1.2},
+    {key:'fieldF',label:'Field freq',min:.1,max:8,step:.1,def:1.2},
     {key:'glyph',label:'Glyph',min:0,max:4,step:1,def:3,enum:['dot','dash','cross','ramp','hand']},
     {key:'jit',label:'Jitter',min:0,max:1,step:.05,def:.25},
     {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
@@ -703,22 +737,25 @@ GEN.image={key:'image',label:'Image → art',
   params:[
     {key:'_file',label:'Your image',type:'file'},
     {key:'_sample',label:'↻ Load sample image',type:'button'},
-    {key:'mode',label:'Mode',min:0,max:5,step:1,def:3,enum:['dither','hatch','flow','ascii','circles','points']},
+    {key:'mode',label:'Mode',min:0,max:6,step:1,def:3,enum:['dither','hatch','flow','ascii','circles','points','outline']},
     {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.2},
     {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
-    {key:'density',label:'Density',min:1,max:5,step:.1,def:1.8},
+    {key:'density',label:'Density',min:.4,max:8,step:.1,def:1.8},
     {key:'jit',label:'Jitter',min:0,max:1,step:.05,def:.25,show:P=>[0,3,4,5].includes(P.mode)},
     {key:'angle',label:'Hatch angle',min:0,max:180,step:1,def:30,show:P=>P.mode===1},
-    {key:'levels',label:'Hatch tones',min:2,max:6,step:1,def:4,show:P=>P.mode===1},
+    {key:'levels',label:'Hatch tones',min:2,max:16,step:1,def:4,show:P=>P.mode===1},
     {key:'glyph',label:'Dither glyph',min:0,max:4,step:1,def:3,enum:['dot','dash','cross','ramp','hand'],show:P=>P.mode===0},
     {key:'asciichars',label:'ASCII ramp (light→dark)',type:'text',def:' .:-=+*#%@',show:P=>P.mode===3},
     {key:'asciifont',label:'Glyph font',type:'font',def:'monospace',show:P=>P.mode===3},
     {key:'_fontfile',label:'Load font file (.ttf/.otf)',type:'file',kind:'font',show:P=>P.mode===3},{key:'asciistroke',label:'Font mode',min:0,max:1,step:1,def:1,enum:['outline','stroke'],show:P=>P.mode===3},{key:'asciisize',label:'Glyph size',min:.3,max:3,step:.05,def:1,show:P=>P.mode===3},
-    {key:'shape',label:'Point shape',min:0,max:6,step:1,def:1,enum:['dot','circle','square','triangle','diamond','cross','heart'],show:P=>P.mode>=4},
-    {key:'psize',label:'Point size',min:.3,max:3,step:.1,def:1,show:P=>P.mode>=4},
-    {key:'accent',label:'Mix-in shape',min:0,max:7,step:1,def:0,enum:['none','dot','circle','square','triangle','diamond','cross','heart'],show:P=>P.mode>=4},
-    {key:'accentpct',label:'Mix-in %',min:0,max:100,step:1,def:0,show:P=>P.mode>=4&&P.accent>0},
-    {key:'flowlen',label:'Flow stroke',min:10,max:120,step:5,def:42,show:P=>P.mode===2},
+    {key:'shape',label:'Point shape',min:0,max:6,step:1,def:1,enum:['dot','circle','square','triangle','diamond','cross','heart'],show:P=>P.mode===4||P.mode===5},
+    {key:'psize',label:'Point size',min:.2,max:6,step:.1,def:1,show:P=>P.mode===4||P.mode===5},
+    {key:'accent',label:'Mix-in shape',min:0,max:7,step:1,def:0,enum:['none','dot','circle','square','triangle','diamond','cross','heart'],show:P=>P.mode===4||P.mode===5},
+    {key:'accentpct',label:'Mix-in %',min:0,max:100,step:1,def:0,show:P=>(P.mode===4||P.mode===5)&&P.accent>0},
+    {key:'flowlen',label:'Flow stroke',min:5,max:400,step:5,def:42,show:P=>P.mode===2},
+    {key:'olevels',label:'Outline levels',min:1,max:12,step:1,def:2,show:P=>P.mode===6},
+    {key:'osmooth',label:'Outline smooth',min:0,max:4,step:1,def:2,show:P=>P.mode===6},
+    {key:'odetail',label:'Outline detail (mm)',min:.3,max:4,step:.1,def:1.2,show:P=>P.mode===6},
   ],
   gen(c,P){const r=c.rect,rng=c.rng,out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
     if(!IMG.loaded)return out;
@@ -798,7 +835,7 @@ GEN.image={key:'image',label:'Image → art',
           const pen=c.pens>1?Math.min(c.pens-1,(t*c.pens)|0):0;
           for(const pl of shapePoly(kind,gx,gy,s))out[pen].lines.push(pl);
         }
-    } else { // points (mode 5): random stipple of shapes, denser & bigger where dark
+    } else if(P.mode===5){ // points: random stipple of shapes, denser & bigger where dark
       const spacing=Math.max(1.4,P.density*1.6),smax=spacing*0.55;
       const tries=Math.floor((r.x1-r.x0)*(r.y1-r.y0)/(spacing*spacing));
       for(let i=0;i<tries;i++){
@@ -810,24 +847,39 @@ GEN.image={key:'image',label:'Image → art',
         const pen=c.pens>1?Math.min(c.pens-1,(t*c.pens)|0):0;
         for(const pl of shapePoly(kind,x,y,s))out[pen].lines.push(pl);
       }
+    } else { // outline (mode 6): clean shade iso-contours (single-line, no fill)
+      const g=fieldGrid(r,Math.max(.5,P.odetail),(x,y)=>toneAt(x,y,r,P));
+      for(let k=1;k<=P.olevels;k++){
+        for(let p of marchingSquares(g,k/(P.olevels+1))){
+          for(let s=0;s<P.osmooth;s++)p=chaikin(p);
+          if(p.length>2)out[0].lines.push(p);
+        }
+      }
     }
     return out;}};
 
 GEN.svgimport={key:'svgimport',label:'SVG import',
   params:[
     {key:'_svgfile',label:'Your SVG (wireframe / vector)',type:'file',kind:'svg'},
-    {key:'fit',label:'Fit %',min:10,max:100,step:1,def:90},
+    {key:'fitmode',label:'Fit to',min:0,max:1,step:1,def:0,enum:['canvas (match image)','content']},
+    {key:'fit',label:'Fit %',min:10,max:100,step:1,def:100},
     {key:'rot',label:'Rotate',min:0,max:3,step:1,def:0,enum:['0°','90°','180°','270°']},
     {key:'flipy',label:'Flip Y',min:0,max:1,step:1,def:0,enum:['off','on']},
   ],
+  // Placed IDENTICALLY to the image generator: the source frame (SVG viewBox, or its
+  // content bbox) is aspect-fit and centred in the margin rect just like imgMap does the
+  // image - so a vector traced from an image at its canvas size overlays it exactly.
   gen(c,P){const r=c.rect,out=[{pen:0,lines:[]}];
     if(!IMPORTSVG.loaded||!IMPORTSVG.polys.length)return out;
-    let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
-    for(const p of IMPORTSVG.polys)for(const q of p){x0=Math.min(x0,q[0]);y0=Math.min(y0,q[1]);x1=Math.max(x1,q[0]);y1=Math.max(y1,q[1]);}
-    const bw=(x1-x0)||1,bh=(y1-y0)||1,mx=x0+bw/2,my=y0+bh/2;
-    const swap=(P.rot===1||P.rot===3),sw=swap?bh:bw,sh=swap?bw:bh;
-    const sc=Math.min((r.x1-r.x0)*P.fit/100/sw,(r.y1-r.y0)*P.fit/100/sh);
-    const cx=(r.x0+r.x1)/2,cy=(r.y0+r.y1)/2;
+    let sx,sy,sw,sh;
+    if(P.fitmode===0&&IMPORTSVG.vb){[sx,sy,sw,sh]=IMPORTSVG.vb;}
+    else{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+      for(const p of IMPORTSVG.polys)for(const q of p){x0=Math.min(x0,q[0]);y0=Math.min(y0,q[1]);x1=Math.max(x1,q[0]);y1=Math.max(y1,q[1]);}
+      sx=x0;sy=y0;sw=(x1-x0)||1;sh=(y1-y0)||1;}
+    const rw=r.x1-r.x0,rh=r.y1-r.y0,f=(P.fit||100)/100;
+    const swap=(P.rot===1||P.rot===3),uw=swap?sh:sw,uh=swap?sw:sh;
+    const sc=Math.min(rw/uw,rh/uh)*f;
+    const cx=(r.x0+r.x1)/2,cy=(r.y0+r.y1)/2,mx=sx+sw/2,my=sy+sh/2;
     const tx=(px,py)=>{let X=px-mx,Y=py-my;if(P.flipy>0)Y=-Y;
       if(P.rot===1){const t=X;X=-Y;Y=t;}else if(P.rot===2){X=-X;Y=-Y;}else if(P.rot===3){const t=X;X=Y;Y=-t;}
       return[cx+X*sc,cy+Y*sc];};
@@ -838,10 +890,10 @@ GEN.squiggle={key:'squiggle',label:'Squiggle',
   params:[
     {key:'_file',label:'Your image',type:'file'},
     {key:'_sample',label:'↻ Load sample image',type:'button'},
-    {key:'rows',label:'Rows',min:24,max:140,step:2,def:64},
+    {key:'rows',label:'Rows',min:16,max:500,step:2,def:64},
     {key:'amp',label:'Amplitude',min:.2,max:1,step:.05,def:.85},
-    {key:'freq',label:'Frequency',min:.5,max:5,step:.1,def:2.4},
-    {key:'step',label:'Step (mm)',min:.4,max:2,step:.1,def:.8},
+    {key:'freq',label:'Frequency',min:.5,max:16,step:.1,def:2.4},
+    {key:'step',label:'Step (mm)',min:.2,max:3,step:.1,def:.8},
     {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.3},
     {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
     {key:'floor',label:'White skip',min:0,max:.4,step:.02,def:.06},
@@ -872,7 +924,7 @@ GEN.scribble={key:'scribble',label:'Scribble',
   params:[
     {key:'_file',label:'Your image',type:'file'},
     {key:'_sample',label:'↻ Load sample image',type:'button'},
-    {key:'points',label:'Points',min:600,max:6000,step:100,def:2600},
+    {key:'points',label:'Points',min:400,max:40000,step:100,def:2600},
     {key:'smooth',label:'Smoothing',min:0,max:3,step:1,def:2},
     {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.3},
     {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
@@ -902,10 +954,10 @@ GEN.spiral={key:'spiral',label:'Spiral shade',
   params:[
     {key:'_file',label:'Your image',type:'file'},
     {key:'_sample',label:'↻ Load sample image',type:'button'},
-    {key:'pitch',label:'Ring pitch',min:1.2,max:6,step:.1,def:2.6},
-    {key:'wob',label:'Wobble freq',min:.5,max:6,step:.1,def:3},
+    {key:'pitch',label:'Ring pitch',min:.3,max:8,step:.1,def:2.6},
+    {key:'wob',label:'Wobble freq',min:.5,max:16,step:.1,def:3},
     {key:'amp',label:'Amplitude',min:.2,max:1,step:.05,def:.85},
-    {key:'step',label:'Step (mm)',min:.4,max:1.5,step:.1,def:.7},
+    {key:'step',label:'Step (mm)',min:.2,max:3,step:.1,def:.7},
     {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.3},
     {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
     {key:'floor',label:'White skip',min:0,max:.4,step:.02,def:.04},
@@ -934,15 +986,15 @@ GEN.topo={key:'topo',label:'Topo glyphs',
   params:[
     {key:'_file',label:'Your image (altitude/photo)',type:'file'},
     {key:'_sample',label:'↻ Load sample image',type:'button'},
-    {key:'levels',label:'Contour levels',min:0,max:10,step:1,def:5},
-    {key:'csmooth',label:'Contour smooth',min:0,max:3,step:1,def:1},
+    {key:'levels',label:'Contour levels',min:0,max:40,step:1,def:5},
+    {key:'csmooth',label:'Contour smooth',min:0,max:5,step:1,def:1},
     {key:'charset',label:'Glyph ramp (light→dark)',type:'text',def:'.:x#'},
     {key:'gfont',label:'Glyph font',type:'font',def:'monospace'},
     {key:'_fontfile',label:'Load font file (.ttf/.otf)',type:'file',kind:'font'},{key:'gstroke',label:'Font mode',min:0,max:1,step:1,def:1,enum:['outline','stroke']},
     {key:'gmode',label:'Glyph mode',min:0,max:2,step:1,def:2,enum:['density','size','both']},
     {key:'gmin',label:'Glyph min (mm)',min:1,max:6,step:.2,def:1.6},
     {key:'gmax',label:'Glyph max (mm)',min:2,max:10,step:.2,def:4},
-    {key:'spacing',label:'Cell (mm)',min:2.5,max:12,step:.5,def:5},
+    {key:'spacing',label:'Cell (mm)',min:1,max:16,step:.5,def:5},
     {key:'jit',label:'Grid jitter',min:0,max:1,step:.05,def:.35},
     {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.2},
     {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
@@ -988,12 +1040,12 @@ GEN.type={key:'type',label:'Typography',
     {key:'text',label:'Text',type:'text',def:'CASCADIA'},
     {key:'font',label:'Font',type:'font',def:'Georgia'},
     {key:'_fontfile',label:'Load font file (.ttf/.otf)',type:'file',kind:'font'},
-    {key:'size',label:'Size (mm)',min:6,max:80,step:1,def:34},
+    {key:'size',label:'Size (mm)',min:6,max:240,step:1,def:34},
     {key:'track',label:'Tracking (em)',min:-.05,max:.3,step:.01,def:.02},
     {key:'ypos',label:'Vertical pos',min:.1,max:.9,step:.02,def:.5},
     {key:'outline',label:'Outline',min:0,max:2,step:1,def:2,enum:['off','outline','stroke']},
     {key:'hatch',label:'Fill hatch',min:0,max:1,step:1,def:0,enum:['off','on']},
-    {key:'hsp',label:'Hatch spacing',min:.6,max:4,step:.1,def:1.2},
+    {key:'hsp',label:'Hatch spacing',min:.2,max:6,step:.1,def:1.2},
     {key:'hang',label:'Hatch angle',min:0,max:180,step:5,def:45},
   ],
   gen(c,P){const r=c.rect,out=Array.from({length:c.pens},(_,i)=>({pen:i,lines:[]}));
@@ -1048,11 +1100,11 @@ GEN.chartrace={key:'chartrace',label:'Trace / ink',
   params:[
     {key:'_file',label:'Character / image',type:'file'},
     {key:'_sample',label:'↻ Load sample image',type:'button'},
-    {key:'levels',label:'Posterize levels',min:2,max:6,step:1,def:3},
-    {key:'csmooth',label:'Smooth',min:0,max:3,step:1,def:1},
-    {key:'detail',label:'Detail (mm cell)',min:.8,max:4,step:.1,def:1.4},
+    {key:'levels',label:'Posterize levels',min:2,max:12,step:1,def:3},
+    {key:'csmooth',label:'Smooth',min:0,max:5,step:1,def:1},
+    {key:'detail',label:'Detail (mm cell)',min:.3,max:4,step:.1,def:1.4},
     {key:'hatch',label:'Hatch dark areas',min:0,max:1,step:1,def:1,enum:['off','on']},
-    {key:'hsp',label:'Hatch spacing',min:.8,max:5,step:.1,def:1.8},
+    {key:'hsp',label:'Hatch spacing',min:.2,max:6,step:.1,def:1.8},
     {key:'contrast',label:'Contrast',min:.4,max:2.6,step:.1,def:1.2},
     {key:'invert',label:'Invert',min:0,max:1,step:1,def:0,enum:['off','on']},
     {key:'fade',label:'Edge fade (mm)',min:0,max:40,step:1,def:0},
